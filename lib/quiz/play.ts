@@ -1,0 +1,670 @@
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import type { DrizzleD1Database } from "drizzle-orm/d1";
+import {
+  categoryMastery,
+  dailyQuizzes,
+  questionResponses,
+  questions,
+  quizAttempts,
+  userStats,
+} from "../../db/schema";
+import { getQuestionStats, recordAnswer } from "./question-stats";
+import {
+  correctCount,
+  finalScore,
+  NETWORK_GRACE_MS,
+  QUESTION_TIME_LIMIT_MS,
+  questionScore,
+} from "./scoring";
+import {
+  signAdvanceToken,
+  signToken,
+  verifyAdvanceToken,
+  verifyToken,
+  type AdvanceState,
+  type AnsweredQuestion,
+  type QuizSessionState,
+} from "./token";
+
+type DB = DrizzleD1Database<Record<string, never>>;
+type QuestionRow = typeof questions.$inferSelect;
+
+export type PublicQuestion = {
+  id: number;
+  text: string;
+  category: string;
+  difficulty: string;
+  options: string[];
+};
+
+export type QuestionFeedback = {
+  questionId: number;
+  userAnswer: string;
+  correctAnswer: string;
+  wasCorrect: boolean;
+  timeTakenMs: number;
+  pointsEarned: number;
+  /** Lifetime correct rate as a percentage 0–100, or null if no one has answered yet. */
+  correctRate: number | null;
+};
+
+export type QuizResults = {
+  attemptId: number;
+  correctCount: number;
+  finalScore: number;
+  totalTimeMs: number;
+  /** % of today's players the user beat by point score (0–100). */
+  percentile: number;
+  /** Count of completed attempts today, including the user's. */
+  totalPlayersToday: number;
+  /** Present only for authenticated users — fed straight to the streak card. */
+  userStreak?: { current: number; longest: number };
+  perQuestion: Array<{
+    questionId: number;
+    text: string;
+    correctAnswer: string;
+    userAnswer: string;
+    wasCorrect: boolean;
+    timeTakenMs: number;
+    pointsEarned: number;
+  }>;
+};
+
+export type StartResult = {
+  token: string;
+  question: PublicQuestion;
+  questionIndex: number;
+  totalQuestions: number;
+};
+
+export type AnswerResult =
+  | {
+      kind: "next";
+      feedback: QuestionFeedback;
+      /** Redeem via POST /api/quiz/continue when the player clicks "Next".
+       *  The next question's currentServedAt is only stamped on redemption,
+       *  so time spent reading feedback doesn't eat into the next timer. */
+      advanceToken: string;
+      nextIndex: number;
+      totalQuestions: number;
+    }
+  | {
+      kind: "complete";
+      feedback: QuestionFeedback;
+      results: QuizResults;
+    };
+
+export type ContinueResult = {
+  token: string;
+  question: PublicQuestion;
+  questionIndex: number;
+  totalQuestions: number;
+};
+
+export class QuizError extends Error {
+  constructor(
+    public code:
+      | "invalid-token"
+      | "question-not-found"
+      | "quiz-not-found"
+      | "already-played",
+    message?: string,
+  ) {
+    super(message ?? code);
+  }
+}
+
+export async function buildStart(opts: {
+  db: DB;
+  secret: string;
+  dailyQuizId: number;
+  questionIds: number[];
+  guestId: string | null;
+  userId: number | null;
+}): Promise<StartResult> {
+  if (opts.questionIds.length === 0) {
+    throw new QuizError("quiz-not-found", "Daily quiz has no questions");
+  }
+  const firstId = opts.questionIds[0];
+  const q = await fetchQuestion(opts.db, firstId);
+
+  const state: QuizSessionState = {
+    dailyQuizId: opts.dailyQuizId,
+    guestId: opts.guestId,
+    userId: opts.userId,
+    answered: [],
+    currentIndex: 0,
+    currentQuestionId: q.id,
+    currentServedAt: Date.now(),
+  };
+  const token = await signToken(state, opts.secret);
+  return {
+    token,
+    question: shuffleOptions(q),
+    questionIndex: 0,
+    totalQuestions: opts.questionIds.length,
+  };
+}
+
+export async function processAnswer(opts: {
+  db: DB;
+  kv: KVNamespace;
+  secret: string;
+  token: string;
+  userAnswer: string;
+  receivedAt?: number;
+}): Promise<AnswerResult> {
+  const state = await verifyToken(opts.token, opts.secret);
+  if (!state) throw new QuizError("invalid-token");
+
+  const receivedAt = opts.receivedAt ?? Date.now();
+  const timeTakenMs = clampTime(receivedAt - state.currentServedAt);
+
+  const q = await fetchQuestion(opts.db, state.currentQuestionId);
+  const timedOut = receivedAt - state.currentServedAt > QUESTION_TIME_LIMIT_MS;
+  const wasCorrect = !timedOut && opts.userAnswer === q.correctAnswer;
+  const points = questionScore(wasCorrect, timeTakenMs);
+
+  // Lifetime per-question stats (PRD §9). Record this response then fetch the
+  // updated rate so the player sees themselves reflected in the number.
+  await recordAnswer(opts.kv, state.currentQuestionId, wasCorrect);
+  const stats = await getQuestionStats(opts.kv, state.currentQuestionId);
+
+  const justAnswered: AnsweredQuestion = {
+    questionId: state.currentQuestionId,
+    userAnswer: opts.userAnswer,
+    wasCorrect,
+    timeTakenMs,
+  };
+  const allAnswered = [...state.answered, justAnswered];
+
+  const feedback: QuestionFeedback = {
+    questionId: state.currentQuestionId,
+    userAnswer: opts.userAnswer,
+    correctAnswer: q.correctAnswer,
+    wasCorrect,
+    timeTakenMs,
+    pointsEarned: points,
+    correctRate: stats.rate,
+  };
+
+  const quiz = await opts.db
+    .select()
+    .from(dailyQuizzes)
+    .where(eq(dailyQuizzes.id, state.dailyQuizId))
+    .limit(1);
+  if (quiz.length === 0) throw new QuizError("quiz-not-found");
+  const questionIds = quiz[0].questionIds;
+
+  const nextIndex = state.currentIndex + 1;
+  if (nextIndex >= questionIds.length) {
+    const results = await persistComplete({
+      db: opts.db,
+      state: { ...state, answered: allAnswered },
+    });
+    return { kind: "complete", feedback, results };
+  }
+
+  // Issue an advance ticket — no question is fetched, no timer is started.
+  // The client redeems this via /api/quiz/continue when the player clicks
+  // Next. That redemption is when the next question's currentServedAt
+  // gets stamped, so feedback time isn't deducted from the next timer.
+  const advanceState: AdvanceState = {
+    dailyQuizId: state.dailyQuizId,
+    guestId: state.guestId,
+    userId: state.userId,
+    answered: allAnswered,
+    nextIndex,
+  };
+  const advanceToken = await signAdvanceToken(advanceState, opts.secret);
+  return {
+    kind: "next",
+    feedback,
+    advanceToken,
+    nextIndex,
+    totalQuestions: questionIds.length,
+  };
+}
+
+/**
+ * Redeem an advance token into a fresh session token for the next question.
+ * This is when the next question's currentServedAt is stamped — NOT when
+ * the previous answer was submitted. Closes the feedback-eats-timer hole.
+ */
+export async function processContinue(opts: {
+  db: DB;
+  secret: string;
+  advanceToken: string;
+}): Promise<ContinueResult> {
+  const advance = await verifyAdvanceToken(opts.advanceToken, opts.secret);
+  if (!advance) throw new QuizError("invalid-token");
+
+  const quiz = await opts.db
+    .select()
+    .from(dailyQuizzes)
+    .where(eq(dailyQuizzes.id, advance.dailyQuizId))
+    .limit(1);
+  if (quiz.length === 0) throw new QuizError("quiz-not-found");
+  const questionIds = quiz[0].questionIds;
+
+  if (advance.nextIndex < 0 || advance.nextIndex >= questionIds.length) {
+    throw new QuizError("invalid-token", "nextIndex out of range");
+  }
+
+  const nextQuestionId = questionIds[advance.nextIndex];
+  const nextQ = await fetchQuestion(opts.db, nextQuestionId);
+
+  const newState: QuizSessionState = {
+    dailyQuizId: advance.dailyQuizId,
+    guestId: advance.guestId,
+    userId: advance.userId,
+    answered: advance.answered,
+    currentIndex: advance.nextIndex,
+    currentQuestionId: nextQuestionId,
+    currentServedAt: Date.now(),
+  };
+  const token = await signToken(newState, opts.secret);
+
+  return {
+    token,
+    question: shuffleOptions(nextQ),
+    questionIndex: advance.nextIndex,
+    totalQuestions: questionIds.length,
+  };
+}
+
+/**
+ * Live percentile per PRD §9. Returns the % of today's players whose
+ * `final_score` is strictly less than `userFinalScore`. Total includes
+ * the user's own attempt.
+ */
+async function computeLivePercentile(
+  db: DB,
+  dailyQuizId: number,
+  userFinalScore: number,
+): Promise<{ beat: number; total: number; percentile: number }> {
+  const [totalRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(quizAttempts)
+    .where(eq(quizAttempts.dailyQuizId, dailyQuizId));
+  const [beatRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(quizAttempts)
+    .where(
+      and(
+        eq(quizAttempts.dailyQuizId, dailyQuizId),
+        lt(quizAttempts.finalScore, userFinalScore),
+      ),
+    );
+  const total = totalRow?.count ?? 0;
+  const beat = beatRow?.count ?? 0;
+  const percentile = total > 0 ? Math.round((beat / total) * 100) : 0;
+  return { beat, total, percentile };
+}
+
+async function persistComplete(opts: {
+  db: DB;
+  state: QuizSessionState;
+}): Promise<QuizResults> {
+  const { db, state } = opts;
+  const correct = correctCount(state.answered);
+  const final = finalScore(state.answered);
+  const totalTime = state.answered.reduce((s, a) => s + a.timeTakenMs, 0);
+
+  const identityClause =
+    state.userId !== null
+      ? and(
+          eq(quizAttempts.dailyQuizId, state.dailyQuizId),
+          eq(quizAttempts.userId, state.userId),
+        )
+      : state.guestId !== null
+        ? and(
+            eq(quizAttempts.dailyQuizId, state.dailyQuizId),
+            eq(quizAttempts.guestId, state.guestId),
+            isNull(quizAttempts.userId),
+          )
+        : null;
+
+  if (identityClause) {
+    const existing = await db
+      .select({ id: quizAttempts.id, finalScore: quizAttempts.finalScore })
+      .from(quizAttempts)
+      .where(identityClause)
+      .limit(1);
+    if (existing.length > 0) {
+      return await loadResults(
+        db,
+        existing[0].id,
+        state.dailyQuizId,
+        existing[0].finalScore,
+        state.userId,
+        state.answered,
+      );
+    }
+  }
+
+  const inserted = await db
+    .insert(quizAttempts)
+    .values({
+      userId: state.userId,
+      guestId: state.guestId,
+      dailyQuizId: state.dailyQuizId,
+      score: correct,
+      finalScore: final,
+      totalTimeMs: totalTime,
+    })
+    .returning({ id: quizAttempts.id });
+  const attemptId = inserted[0].id;
+
+  if (state.answered.length > 0) {
+    await db.insert(questionResponses).values(
+      state.answered.map((a) => ({
+        quizAttemptId: attemptId,
+        questionId: a.questionId,
+        userAnswer: a.userAnswer,
+        wasCorrect: a.wasCorrect,
+        timeTakenMs: a.timeTakenMs,
+      })),
+    );
+  }
+
+  // For authenticated users only: roll up lifetime stats + category mastery.
+  // (Per PRD §15 guest → account merge is deferred to v2.)
+  if (state.userId !== null) {
+    await updateUserStats(db, state.userId, correct, final);
+    await updateCategoryMastery(db, state.userId, state.answered);
+  }
+
+  return await loadResults(
+    db,
+    attemptId,
+    state.dailyQuizId,
+    final,
+    state.userId,
+    state.answered,
+  );
+}
+
+function utcDateNDaysAgo(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+async function updateUserStats(
+  db: DB,
+  userId: number,
+  correctOnQuiz: number,
+  finalScoreValue: number,
+): Promise<void> {
+  const today = utcDateNDaysAgo(0);
+  const yesterday = utcDateNDaysAgo(1);
+
+  const [existing] = await db
+    .select()
+    .from(userStats)
+    .where(eq(userStats.userId, userId))
+    .limit(1);
+
+  if (!existing) {
+    await db.insert(userStats).values({
+      userId,
+      currentStreak: 1,
+      longestStreak: 1,
+      totalQuizzes: 1,
+      totalCorrect: correctOnQuiz,
+      lifetimeScore: finalScoreValue,
+      lastPlayedDate: today,
+    });
+    return;
+  }
+
+  // Streak math. Freeze logic (PRD §10) is Phase 4 polish — for v1
+  // a missed day breaks the streak. Same-day replay is blocked upstream
+  // by the unique constraint, but we guard anyway.
+  let newStreak = existing.currentStreak;
+  if (existing.lastPlayedDate === today) {
+    // No-op: shouldn't happen given the (user_id, daily_quiz_id) unique
+    // constraint, but if it does we preserve the existing streak.
+  } else if (existing.lastPlayedDate === yesterday) {
+    newStreak = existing.currentStreak + 1;
+  } else {
+    newStreak = 1;
+  }
+  const newLongest = Math.max(existing.longestStreak, newStreak);
+
+  await db
+    .update(userStats)
+    .set({
+      currentStreak: newStreak,
+      longestStreak: newLongest,
+      totalQuizzes: existing.totalQuizzes + 1,
+      totalCorrect: existing.totalCorrect + correctOnQuiz,
+      lifetimeScore: existing.lifetimeScore + finalScoreValue,
+      lastPlayedDate: today,
+    })
+    .where(eq(userStats.userId, userId));
+}
+
+async function updateCategoryMastery(
+  db: DB,
+  userId: number,
+  answered: AnsweredQuestion[],
+): Promise<void> {
+  if (answered.length === 0) return;
+
+  // Look up categories for the answered questions.
+  const rows = await db
+    .select({ id: questions.id, category: questions.category })
+    .from(questions)
+    .where(
+      inArray(
+        questions.id,
+        answered.map((a) => a.questionId),
+      ),
+    );
+  const categoryById = new Map(rows.map((r) => [r.id, r.category]));
+
+  // Tally per category for this quiz.
+  const tallies = new Map<
+    string,
+    { questionsSeen: number; questionsCorrect: number }
+  >();
+  for (const a of answered) {
+    const category = categoryById.get(a.questionId);
+    if (!category) continue;
+    const tally = tallies.get(category) ?? {
+      questionsSeen: 0,
+      questionsCorrect: 0,
+    };
+    tally.questionsSeen += 1;
+    if (a.wasCorrect) tally.questionsCorrect += 1;
+    tallies.set(category, tally);
+  }
+
+  // Upsert each category. D1 supports ON CONFLICT but the schema uses a
+  // composite PK so manual upsert keeps things readable.
+  for (const [category, tally] of tallies) {
+    const [existing] = await db
+      .select()
+      .from(categoryMastery)
+      .where(
+        and(
+          eq(categoryMastery.userId, userId),
+          eq(categoryMastery.category, category),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      await db
+        .update(categoryMastery)
+        .set({
+          questionsSeen: existing.questionsSeen + tally.questionsSeen,
+          questionsCorrect: existing.questionsCorrect + tally.questionsCorrect,
+        })
+        .where(
+          and(
+            eq(categoryMastery.userId, userId),
+            eq(categoryMastery.category, category),
+          ),
+        );
+    } else {
+      await db.insert(categoryMastery).values({
+        userId,
+        category,
+        questionsSeen: tally.questionsSeen,
+        questionsCorrect: tally.questionsCorrect,
+      });
+    }
+  }
+}
+
+async function loadResults(
+  db: DB,
+  attemptId: number,
+  dailyQuizId: number,
+  finalScoreValue: number,
+  userId: number | null,
+  answered: AnsweredQuestion[],
+): Promise<QuizResults> {
+  const rows =
+    answered.length > 0
+      ? await db
+          .select()
+          .from(questions)
+          .where(
+            inArray(
+              questions.id,
+              answered.map((a) => a.questionId),
+            ),
+          )
+      : [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const totalTime = answered.reduce((s, a) => s + a.timeTakenMs, 0);
+
+  const { percentile, total: totalPlayersToday } = await computeLivePercentile(
+    db,
+    dailyQuizId,
+    finalScoreValue,
+  );
+
+  let userStreak: { current: number; longest: number } | undefined;
+  if (userId !== null) {
+    const [stats] = await db
+      .select({
+        current: userStats.currentStreak,
+        longest: userStats.longestStreak,
+      })
+      .from(userStats)
+      .where(eq(userStats.userId, userId))
+      .limit(1);
+    if (stats) {
+      userStreak = { current: stats.current, longest: stats.longest };
+    }
+  }
+
+  return {
+    attemptId,
+    correctCount: correctCount(answered),
+    finalScore: finalScore(answered),
+    totalTimeMs: totalTime,
+    percentile,
+    totalPlayersToday,
+    userStreak,
+    perQuestion: answered.map((a) => {
+      const q = byId.get(a.questionId);
+      return {
+        questionId: a.questionId,
+        text: q?.text ?? "(question removed)",
+        correctAnswer: q?.correctAnswer ?? "",
+        userAnswer: a.userAnswer,
+        wasCorrect: a.wasCorrect,
+        timeTakenMs: a.timeTakenMs,
+        pointsEarned: questionScore(a.wasCorrect, a.timeTakenMs),
+      };
+    }),
+  };
+}
+
+async function fetchQuestion(db: DB, id: number): Promise<QuestionRow> {
+  const rows = await db
+    .select()
+    .from(questions)
+    .where(eq(questions.id, id))
+    .limit(1);
+  if (rows.length === 0) {
+    throw new QuizError("question-not-found", `Question ${id} not found`);
+  }
+  return rows[0];
+}
+
+function shuffleOptions(q: QuestionRow): PublicQuestion {
+  const all = [q.correctAnswer, ...q.incorrectAnswers];
+  for (let i = all.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [all[i], all[j]] = [all[j], all[i]];
+  }
+  return {
+    id: q.id,
+    text: q.text,
+    category: q.category,
+    difficulty: q.difficulty,
+    options: all,
+  };
+}
+
+function clampTime(rawMs: number): number {
+  return Math.max(0, Math.min(QUESTION_TIME_LIMIT_MS + NETWORK_GRACE_MS, rawMs));
+}
+
+export async function findExistingAttempt(opts: {
+  db: DB;
+  dailyQuizId: number;
+  guestId: string | null;
+  userId: number | null;
+}): Promise<QuizResults | null> {
+  const { db } = opts;
+  const clause =
+    opts.userId !== null
+      ? and(
+          eq(quizAttempts.dailyQuizId, opts.dailyQuizId),
+          eq(quizAttempts.userId, opts.userId),
+        )
+      : opts.guestId !== null
+        ? and(
+            eq(quizAttempts.dailyQuizId, opts.dailyQuizId),
+            eq(quizAttempts.guestId, opts.guestId),
+            isNull(quizAttempts.userId),
+          )
+        : null;
+
+  if (!clause) return null;
+
+  const attempt = await db
+    .select()
+    .from(quizAttempts)
+    .where(clause)
+    .limit(1);
+  if (attempt.length === 0) return null;
+
+  const responses = await db
+    .select()
+    .from(questionResponses)
+    .where(eq(questionResponses.quizAttemptId, attempt[0].id));
+
+  const answered: AnsweredQuestion[] = responses.map((r) => ({
+    questionId: r.questionId,
+    userAnswer: r.userAnswer,
+    wasCorrect: r.wasCorrect,
+    timeTakenMs: r.timeTakenMs,
+  }));
+
+  return await loadResults(
+    db,
+    attempt[0].id,
+    attempt[0].dailyQuizId,
+    attempt[0].finalScore,
+    opts.userId,
+    answered,
+  );
+}

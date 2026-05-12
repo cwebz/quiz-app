@@ -1,0 +1,33 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "smarter-than-the-internet",
+	"main": "./worker.ts",
+	"compatibility_date": "2026-05-08",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"triggers": {
+		"crons": [
+			"55 23 * * *"
+		]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "smarter-than-the-internet",
+			"database_id": "b68a7f5d-54bb-4996-8fb3-43f602b05f4e",
+			"migrations_dir": "migrations"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "QUIZ_KV",
+			"id": "PLACEHOLDER_RUN_WRANGLER_KV_NAMESPACE_CREATE"
+		}
+	]
+}

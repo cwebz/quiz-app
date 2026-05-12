@@ -1,0 +1,446 @@
+import { and, desc, eq, gte, sql } from "drizzle-orm";
+import Link from "next/link";
+import { auth } from "@/auth";
+import { Ico } from "@/components/Icons";
+import { SignInButton } from "@/components/SignInButton";
+import { SignOutButton } from "@/components/SignOutButton";
+import {
+  categoryMastery,
+  dailyQuizzes,
+  quizAttempts,
+  users,
+  userStats,
+} from "@/db/schema";
+import { getDb } from "@/lib/db";
+
+const CATEGORY_COLORS = [
+  "var(--blue)",
+  "var(--mint)",
+  "var(--pink)",
+  "var(--orange)",
+  "var(--primary)",
+  "var(--yellow)",
+];
+const MASTERY_THRESHOLD = 100; // PRD §11 Master tier
+const CAL_DAYS = 28;
+
+type ProfileData = {
+  displayName: string;
+  email: string | null;
+  createdAt: string;
+  currentStreak: number;
+  longestStreak: number;
+  totalQuizzes: number;
+  totalCorrect: number;
+  lifetimeScore: number;
+  categories: Array<{
+    name: string;
+    correct: number;
+    seen: number;
+    color: string;
+  }>;
+  calendar: Array<{ date: string; score: number | null; isToday: boolean }>;
+};
+
+async function loadProfile(userId: number): Promise<ProfileData | null> {
+  const db = await getDb();
+
+  const [userRow] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!userRow) return null;
+
+  const [statsRow] = await db
+    .select()
+    .from(userStats)
+    .where(eq(userStats.userId, userId))
+    .limit(1);
+
+  const cats = await db
+    .select()
+    .from(categoryMastery)
+    .where(eq(categoryMastery.userId, userId))
+    .orderBy(desc(categoryMastery.questionsCorrect));
+
+  // 28-day activity calendar: join quiz_attempts with daily_quizzes for the date.
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - CAL_DAYS + 1);
+  const cutoffIso = cutoff.toISOString().slice(0, 10);
+
+  const recent = await db
+    .select({
+      date: dailyQuizzes.quizDate,
+      score: quizAttempts.score,
+    })
+    .from(quizAttempts)
+    .innerJoin(dailyQuizzes, eq(quizAttempts.dailyQuizId, dailyQuizzes.id))
+    .where(
+      and(
+        eq(quizAttempts.userId, userId),
+        gte(dailyQuizzes.quizDate, cutoffIso),
+      ),
+    );
+  const scoreByDate = new Map(recent.map((r) => [r.date, r.score]));
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const todayIso = today.toISOString().slice(0, 10);
+  const calendar: ProfileData["calendar"] = [];
+  for (let i = CAL_DAYS - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const iso = d.toISOString().slice(0, 10);
+    const score = scoreByDate.get(iso) ?? null;
+    calendar.push({ date: iso, score, isToday: iso === todayIso });
+  }
+
+  return {
+    displayName: userRow.displayName ?? "Player",
+    email: userRow.email,
+    createdAt: userRow.createdAt,
+    currentStreak: statsRow?.currentStreak ?? 0,
+    longestStreak: statsRow?.longestStreak ?? 0,
+    totalQuizzes: statsRow?.totalQuizzes ?? 0,
+    totalCorrect: statsRow?.totalCorrect ?? 0,
+    lifetimeScore: statsRow?.lifetimeScore ?? 0,
+    categories: cats.map((c, i) => ({
+      name: c.category,
+      correct: c.questionsCorrect,
+      seen: c.questionsSeen,
+      color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+    })),
+    calendar,
+  };
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+}
+
+function formatJoined(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function emailHandle(email: string | null, displayName: string): string {
+  if (email) return `@${email.split("@")[0]}`;
+  return `@${displayName.toLowerCase().replace(/\s+/g, "")}`;
+}
+
+function prettyCategory(slug: string): string {
+  return slug
+    .split(/[_\s]+/)
+    .map((w) => w[0]?.toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+export default async function ProfilePage() {
+  const session = await auth();
+  if (!session?.userId) {
+    return (
+      <div
+        className="card"
+        style={{ maxWidth: 520, marginTop: 40, textAlign: "center" }}
+      >
+        <h2 style={{ marginBottom: 8 }}>Profile</h2>
+        <p
+          style={{
+            color: "var(--ink-soft)",
+            fontSize: 14,
+            lineHeight: 1.5,
+            marginBottom: 20,
+          }}
+        >
+          Sign in with Google to see your lifetime stats, badges, and streak
+          history.
+        </p>
+        <SignInButton
+          label="Continue with Google"
+          redirectTo="/profile"
+          className="btn"
+          style={{ display: "inline-flex" }}
+        />
+      </div>
+    );
+  }
+
+  const profile = await loadProfile(session.userId);
+  if (!profile) {
+    return (
+      <div className="card" style={{ maxWidth: 520, marginTop: 40 }}>
+        <h2>Profile not found</h2>
+        <p style={{ color: "var(--ink-soft)", fontSize: 14 }}>
+          We couldn&apos;t find your account row. Try signing out and back in.
+        </p>
+        <SignOutButton style={{ marginTop: 16 }} />
+      </div>
+    );
+  }
+
+  const lifetimeAccuracy =
+    profile.totalQuizzes > 0
+      ? Math.round((profile.totalCorrect / (profile.totalQuizzes * 5)) * 100)
+      : null;
+
+  return (
+    <div className="stats-shell">
+      <div className="stats-header">
+        <div className="profile-avatar">{initials(profile.displayName)}</div>
+        <div>
+          <div className="profile-name">{profile.displayName}</div>
+          <div className="profile-handle">
+            {emailHandle(profile.email, profile.displayName)} · joined{" "}
+            {formatJoined(profile.createdAt)}
+          </div>
+          <div className="profile-pills">
+            {profile.currentStreak > 0 && (
+              <span className="chip chip--yellow">
+                <Ico.Fire style={{ width: 12, height: 12 }} />{" "}
+                {profile.currentStreak}-day streak
+              </span>
+            )}
+            {lifetimeAccuracy !== null && (
+              <span className="chip chip--mint">
+                {lifetimeAccuracy}% lifetime accuracy
+              </span>
+            )}
+            {profile.totalQuizzes > 0 && (
+              <span className="chip chip--blue">
+                {profile.lifetimeScore.toLocaleString()} pts
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="stats-signout">
+          <SignOutButton
+            label="Sign out"
+            style={{ padding: "10px 16px", fontSize: 13 }}
+          />
+        </div>
+      </div>
+
+      <div className="stats-grid">
+        <div className="stat-card purple">
+          <div className="num">{profile.currentStreak}</div>
+          <div className="lbl">Current streak</div>
+        </div>
+        <div className="stat-card yellow">
+          <div className="num">{profile.longestStreak}</div>
+          <div className="lbl">Longest streak</div>
+        </div>
+        <div className="stat-card mint">
+          <div className="num">{profile.totalQuizzes}</div>
+          <div className="lbl">Quizzes played</div>
+        </div>
+        <div className="stat-card pink">
+          <div className="num">{profile.totalCorrect}</div>
+          <div className="lbl">Correct answers</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="row between">
+          <div>
+            <div className="section-h" style={{ marginBottom: 4 }}>
+              Last 4 weeks
+            </div>
+            <div className="section-sub">
+              {profile.totalQuizzes === 0
+                ? "Play your first quiz to start filling this in."
+                : "Each square is one day. Darker green = better score."}
+            </div>
+          </div>
+          <div className="row" style={{ gap: 10 }}>
+            <span className="chip chip--mint">Played</span>
+            <span className="chip chip--coral">Missed</span>
+          </div>
+        </div>
+        <div className="streak-cal">
+          {profile.calendar.map((day) => {
+            const classes = ["cal-cell"];
+            if (day.score !== null) classes.push("played");
+            if (day.isToday) classes.push("today");
+            return (
+              <div
+                key={day.date}
+                className={classes.join(" ")}
+                data-score={day.score ?? undefined}
+                title={
+                  day.score !== null
+                    ? `${day.date} · ${day.score}/5`
+                    : `${day.date} · no attempt`
+                }
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="section-h" style={{ marginBottom: 4 }}>
+          Category mastery
+        </div>
+        <div className="section-sub">
+          Lifetime correct answers per category. Hit {MASTERY_THRESHOLD} to earn
+          Master tier.
+        </div>
+        {profile.categories.length === 0 ? (
+          <p style={{ color: "var(--ink-soft)", fontSize: 14 }}>
+            No category data yet — finish a few quizzes to start populating
+            this.
+          </p>
+        ) : (
+          <div className="category-bars">
+            {profile.categories.map((c) => {
+              const pct = Math.min(
+                100,
+                (c.correct / MASTERY_THRESHOLD) * 100,
+              );
+              const accuracy =
+                c.seen > 0 ? Math.round((c.correct / c.seen) * 100) : 0;
+              return (
+                <div className="cat-row" key={c.name}>
+                  <div className="cat-name">{prettyCategory(c.name)}</div>
+                  <div className="cat-track">
+                    <div
+                      className="cat-fill"
+                      style={{ width: `${pct}%`, background: c.color }}
+                    />
+                  </div>
+                  <div className="cat-count">
+                    {c.correct}/{MASTERY_THRESHOLD} · {accuracy}%
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="row between">
+          <div>
+            <div className="section-h" style={{ marginBottom: 4 }}>
+              Badges
+            </div>
+            <div className="section-sub">
+              Full badge system lands in Phase 4 — these are derived live from
+              your current stats.
+            </div>
+          </div>
+        </div>
+        <BadgesGrid profile={profile} />
+      </div>
+
+      <p
+        style={{
+          color: "var(--ink-mute)",
+          fontSize: 12,
+          textAlign: "center",
+          marginTop: -6,
+        }}
+      >
+        <Link
+          href="/"
+          style={{
+            color: "var(--ink-soft)",
+            textDecoration: "underline",
+          }}
+        >
+          Back to today
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+function BadgesGrid({ profile }: { profile: ProfileData }) {
+  const firstSteps = profile.totalQuizzes >= 1;
+  const weekOne = profile.currentStreak >= 7 || profile.longestStreak >= 7;
+  const monthStrong =
+    profile.currentStreak >= 30 || profile.longestStreak >= 30;
+  const centurion =
+    profile.currentStreak >= 100 || profile.longestStreak >= 100;
+  const masterCategory = profile.categories.find(
+    (c) => c.correct >= MASTERY_THRESHOLD,
+  );
+
+  return (
+    <div className="badges-grid">
+      <BadgeTile
+        unlocked={firstSteps}
+        tier="gold"
+        icon={<Ico.Trophy style={{ width: 30, height: 30 }} />}
+        name="First Steps"
+        desc="Played your first quiz"
+      />
+      <BadgeTile
+        unlocked={weekOne}
+        tier="silver"
+        icon={<Ico.Calendar style={{ width: 28, height: 28 }} />}
+        name="Week One"
+        desc={`7-day streak${weekOne ? "" : ` · ${7 - profile.longestStreak} to go`}`}
+      />
+      <BadgeTile
+        unlocked={monthStrong}
+        tier="gold"
+        icon={<Ico.Calendar style={{ width: 28, height: 28 }} />}
+        name="Month Strong"
+        desc={
+          monthStrong
+            ? "30-day streak"
+            : `30-day streak · ${Math.max(0, 30 - profile.longestStreak)} to go`
+        }
+      />
+      <BadgeTile
+        unlocked={centurion}
+        tier="master"
+        icon={<Ico.Fire style={{ width: 28, height: 28 }} />}
+        name="Centurion"
+        desc={
+          centurion
+            ? "100-day streak"
+            : `100-day streak · ${Math.max(0, 100 - profile.longestStreak)} to go`
+        }
+      />
+      {masterCategory && (
+        <BadgeTile
+          unlocked
+          tier="master"
+          icon={<Ico.Brain style={{ width: 28, height: 28 }} />}
+          name={`${prettyCategory(masterCategory.name)} Master`}
+          desc={`${masterCategory.correct} correct`}
+        />
+      )}
+    </div>
+  );
+}
+
+function BadgeTile({
+  unlocked,
+  tier,
+  icon,
+  name,
+  desc,
+}: {
+  unlocked: boolean;
+  tier: "gold" | "silver" | "bronze" | "master";
+  icon: React.ReactNode;
+  name: string;
+  desc: string;
+}) {
+  const tierClass = unlocked ? tier : "locked";
+  return (
+    <div className={`badge ${tierClass}`}>
+      <div className="badge-medal">{icon}</div>
+      <div className="badge-name">{name}</div>
+      <div className="badge-desc">{desc}</div>
+    </div>
+  );
+}

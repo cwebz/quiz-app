@@ -32,9 +32,17 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.dev.vars
 
 # vercel
 .vercel
+
+# cloudflare / wrangler
+.wrangler/
+.open-next/
+
+# regenerable screenshots from scripts/mobile-audit.ts + screenshot-flow.ts
+screenshots/
 
 # typescript
 *.tsbuildinfo
