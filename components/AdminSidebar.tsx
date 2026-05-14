@@ -49,6 +49,13 @@ export function AdminSidebar({ pendingCount }: { pendingCount: number }) {
       >
         <span aria-hidden="true">📅</span> Tomorrow&apos;s quiz
       </Link>
+      <div className="admin-side-h">Danger zone</div>
+      <Link
+        href="/admin/dangerous"
+        className={isActive("/admin/dangerous") ? "active" : ""}
+      >
+        <span aria-hidden="true">⚠️</span> Dangerous
+      </Link>
     </aside>
   );
 }

@@ -52,10 +52,7 @@ Product + copy guidelines: `../PRODUCT.md`
 - Cron schedule lives in `wrangler.jsonc` under `"triggers"`. Currently **commented out** — requires a workers.dev subdomain to be activated first (Cloudflare dashboard → Workers & Pages → workers.dev subdomain).
 - Until cron is live, select tomorrow's quiz manually: `POST /admin/select-quiz?date=YYYY-MM-DD`
 - To force-replace an existing quiz (keeps play state): `POST /admin/select-quiz?date=YYYY-MM-DD&force=true`
-- To fully reset a day — delete all play records AND pick new questions (run from browser console while signed in as admin):
-  ```js
-  fetch('/admin/reset-day?date=2026-05-14', { method: 'POST' }).then(r => r.json()).then(console.log)
-  ```
+- To fully reset a day — delete all play records AND pick new questions: go to **Admin → Dangerous → Reset day**, pick the date, and confirm. The underlying route is `POST /admin/reset-day?date=YYYY-MM-DD`.
 
 ---
 
@@ -73,6 +70,7 @@ web/
 │   │   ├── flagged/              # Review user-flagged questions
 │   │   ├── search/               # Search questions by text or ID
 │   │   ├── preview/              # Preview tomorrow's quiz
+│   │   ├── dangerous/            # Destructive actions (reset-day, etc.) with confirmation UI
 │   │   └── select-quiz/route.ts  # POST: select/force-replace a date's quiz
 │   └── api/quiz/
 │       ├── today/                # GET: quiz status + totalQuestions
