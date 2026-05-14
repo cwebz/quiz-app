@@ -20,6 +20,9 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  if (body.answer.length > 512) {
+    return Response.json({ error: "answer too long" }, { status: 400 });
+  }
 
   const env = await getEnv();
   if (!env.QUIZ_TOKEN_SECRET) {

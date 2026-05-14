@@ -12,6 +12,7 @@ const COLORS = [
 ];
 
 export function ConfettiBurst({ count = 30 }: { count?: number }) {
+  /* eslint-disable react-hooks/purity */
   const pieces = useMemo(
     () =>
       Array.from({ length: count }, (_, i) => ({
@@ -23,6 +24,7 @@ export function ConfettiBurst({ count = 30 }: { count?: number }) {
       })),
     [count],
   );
+  /* eslint-enable react-hooks/purity */
   return (
     <div
       style={{

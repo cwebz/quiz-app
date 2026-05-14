@@ -28,6 +28,8 @@ export const userStats = sqliteTable("user_stats", {
   lastPlayedDate: text("last_played_date"),
   freezesUsedThisWeek: integer("freezes_used_this_week").notNull().default(0),
   weekStartDate: text("week_start_date"),
+  perfectScores: integer("perfect_scores").notNull().default(0),
+  comebackEarned: integer("comeback_earned", { mode: "boolean" }).notNull().default(false),
 });
 
 export const categoryMastery = sqliteTable(

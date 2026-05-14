@@ -29,6 +29,8 @@
 
   --mint:           #2DD881;
   --mint-dark:      #18B868;
+  --mint-mid:       #8DE3B6;
+  --mint-light:     #B0EBCB;
   --mint-soft:      #D7F7E6;
 
   --coral:          #FF5252;
@@ -106,16 +108,55 @@ a { color: inherit; text-decoration: none; }
   border-bottom: 2px solid var(--hairline);
   position: sticky; top: 0; z-index: 5;
 }
+.mobile-nav-menu { display: none; position: relative; }
+
 @media (max-width: 640px) {
   .topbar {
     gap: 8px;
     padding-left: max(14px, env(safe-area-inset-left));
     padding-right: max(14px, env(safe-area-inset-right));
   }
-  /* Hide center nav on narrow screens — Today is implicit on /, Profile is
-     reachable via the avatar when signed in, and Admin is desktop-first. */
+  /* Center nav collapses into the hamburger popover on narrow screens. */
   .topbar .topnav { display: none; }
+  .mobile-nav-menu { display: flex; }
 }
+.mobile-nav-btn {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  border: 2px solid var(--hairline);
+  background: var(--surface);
+  display: grid; place-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+}
+.mobile-nav-btn:hover { border-color: var(--ink-soft); }
+.mobile-nav-btn[aria-expanded="true"] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.mobile-nav-popover {
+  position: absolute; top: calc(100% + 8px); left: 0;
+  min-width: 180px;
+  background: var(--surface);
+  border: 2px solid var(--hairline);
+  border-bottom-width: 4px;
+  border-radius: var(--r-md);
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  z-index: 10;
+}
+.mobile-nav-popover a {
+  font-family: var(--font-display); font-weight: 600; font-size: 15px;
+  color: var(--ink-soft);
+  padding: 10px 14px;
+  border-radius: 999px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.mobile-nav-popover a.active { color: var(--primary); background: var(--primary-soft); }
+.mobile-nav-popover a:hover:not(.active) { color: var(--ink); background: var(--bg); }
 .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--ink); cursor: pointer; }
 .brand-dot { width: 36px; height: 36px; border-radius: 12px; background: var(--primary); display: grid; place-items: center; box-shadow: 0 3px 0 var(--primary-dark); }
 .brand-dot svg { color: #fff; }
@@ -180,11 +221,11 @@ a { color: inherit; text-decoration: none; }
 }
 .btn--ghost:active { box-shadow: 0 0 0 2px var(--hairline) inset, 0 2px 0 var(--hairline); }
 
-.btn--mint   { background: var(--mint);   box-shadow: 0 5px 0 var(--mint-dark); }
+.btn--mint   { background: var(--mint);   box-shadow: 0 5px 0 var(--mint-dark);  color: var(--ink); }
 .btn--mint:active   { box-shadow: 0 2px 0 var(--mint-dark); }
-.btn--coral  { background: var(--coral);  box-shadow: 0 5px 0 var(--coral-dark); }
+.btn--coral  { background: var(--coral);  box-shadow: 0 5px 0 var(--coral-dark); color: var(--ink); }
 .btn--coral:active  { box-shadow: 0 2px 0 var(--coral-dark); }
-.btn--pink   { background: var(--pink);   box-shadow: 0 5px 0 var(--pink-dark); }
+.btn--pink   { background: var(--pink);   box-shadow: 0 5px 0 var(--pink-dark);  color: var(--ink); }
 .btn--pink:active   { box-shadow: 0 2px 0 var(--pink-dark); }
 .btn--yellow { background: var(--yellow); color: #6B4900; box-shadow: 0 5px 0 var(--yellow-dark); }
 .btn--yellow:active { box-shadow: 0 2px 0 var(--yellow-dark); }
@@ -274,10 +315,9 @@ a { color: inherit; text-decoration: none; }
 }
 .quiz-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, var(--mint) 0%, #5BE89D 100%);
+  background: var(--mint);
   border-radius: 999px;
   transition: width 400ms cubic-bezier(.4,1.4,.5,1);
-  box-shadow: inset 0 -3px 0 rgba(0,0,0,0.08);
 }
 .quiz-counter { font-family: var(--font-display); font-weight: 700; color: var(--ink-soft); font-size: 15px; min-width: 36px; }
 
@@ -398,13 +438,9 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   position: relative; overflow: hidden;
 }
-.results-hero::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background:
-    radial-gradient(circle at 20% 0%, var(--yellow-soft) 0%, transparent 38%),
-    radial-gradient(circle at 95% 100%, var(--pink-soft) 0%, transparent 36%);
-  opacity: 0.6;
-}
+/* results-hero::before intentionally removed — radial gradient blobs
+   violate the Flat-Ground Rule (DESIGN.md). Card border provides enough
+   visual containment without decoration. */
 .results-hero > * { position: relative; }
 .percentile-eyebrow { color: var(--primary-dark); font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 13px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .percentile-num { font-family: var(--font-display); font-weight: 700; font-size: clamp(72px, 11vw, 110px); line-height: 0.95; color: var(--ink); letter-spacing: -0.04em; }
@@ -414,7 +450,7 @@ a { color: inherit; text-decoration: none; }
 .score-ring { position: relative; }
 .score-ring svg { transform: rotate(-90deg); }
 .score-ring-track { fill: none; stroke: var(--hairline); stroke-width: 14; }
-.score-ring-arc  { fill: none; stroke: url(#ringGrad); stroke-width: 14; stroke-linecap: round; }
+.score-ring-arc  { fill: none; stroke: var(--primary); stroke-width: 14; stroke-linecap: round; transition: stroke-dashoffset 1.2s cubic-bezier(.4,1.4,.5,1); }
 .score-ring-center {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -428,7 +464,7 @@ a { color: inherit; text-decoration: none; }
 .results-top { display: flex; flex-direction: column; gap: 18px; }
 
 .signin-card {
-  background: linear-gradient(135deg, var(--ink) 0%, #2d1f4f 100%);
+  background: var(--ink);
   color: #fff;
   border: 2px solid var(--ink);
   box-shadow: 0 4px 0 var(--ink);
@@ -460,8 +496,8 @@ a { color: inherit; text-decoration: none; }
 
 /* Streak card (signed-in variant; placeholder until Phase 3 auth) */
 .streak-card {
-  background: linear-gradient(135deg, #FFCB05 0%, #FF9447 100%);
-  border: 2px solid #C58800;
+  background: var(--yellow);
+  border: 2px solid var(--yellow-dark);
   border-bottom-width: 4px;
   color: #5C3D00;
   padding: 22px;
@@ -508,8 +544,8 @@ a { color: inherit; text-decoration: none; }
   background: var(--primary-soft); color: var(--primary);
   border: 3px solid var(--primary); box-shadow: inset 0 -4px 0 rgba(0,0,0,0.08);
 }
-.badge.gold .badge-medal   { background: linear-gradient(135deg, #FFD93D, #FF9447); border-color: #C58800; color: #5C3D00; }
-.badge.silver .badge-medal { background: linear-gradient(135deg, #E2E5EE, #9DA4B5); border-color: #6E7686; color: #2C3142; }
+.badge.gold .badge-medal   { background: var(--yellow); border-color: var(--yellow-dark); color: #5C3D00; }
+.badge.silver .badge-medal { background: #C8CDD8; border-color: #6E7686; color: #2C3142; }
 .badge-name { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
 .badge-desc { font-size: 12px; color: var(--ink-soft); line-height: 1.35; }
 
@@ -522,7 +558,7 @@ a { color: inherit; text-decoration: none; }
 }
 .profile-avatar {
   width: 96px; height: 96px; border-radius: 28px;
-  background: linear-gradient(135deg, var(--primary), var(--pink));
+  background: var(--primary);
   display: grid; place-items: center;
   font-family: var(--font-display); font-weight: 700; font-size: 38px; color: #fff;
   border: 3px solid var(--ink); box-shadow: 0 5px 0 var(--ink);
@@ -549,8 +585,8 @@ a { color: inherit; text-decoration: none; }
 .section-sub { color: var(--ink-soft); font-size: 14px; margin-top: -6px; margin-bottom: 14px; }
 
 .badges-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; }
-.badge.bronze .badge-medal { background: linear-gradient(135deg, #E29C74, #B16334); border-color: #7A4220; color: #3F2410; }
-.badge.master .badge-medal { background: linear-gradient(135deg, var(--primary), var(--pink)); border-color: var(--ink); color: #fff; }
+.badge.bronze .badge-medal { background: #CA7D54; border-color: #7A4220; color: #3F2410; }
+.badge.master .badge-medal { background: var(--primary); border-color: var(--ink); color: #fff; }
 
 .category-bars { display: flex; flex-direction: column; gap: 12px; }
 .cat-row { display: grid; grid-template-columns: 140px 1fr 100px; gap: 12px; align-items: center; }
@@ -565,9 +601,9 @@ a { color: inherit; text-decoration: none; }
 .cal-cell.played { background: var(--mint); }
 .cal-cell.played[data-score="5"] { background: var(--mint-dark); }
 .cal-cell.played[data-score="4"] { background: var(--mint); }
-.cal-cell.played[data-score="3"] { background: #8DE3B6; }
-.cal-cell.played[data-score="2"] { background: #B0EBCB; }
-.cal-cell.played[data-score="1"] { background: #D7F7E6; }
+.cal-cell.played[data-score="3"] { background: var(--mint-mid); }
+.cal-cell.played[data-score="2"] { background: var(--mint-light); }
+.cal-cell.played[data-score="1"] { background: var(--mint-soft); }
 .cal-cell.played[data-score="0"] { background: var(--coral-soft); }
 .cal-cell.today { box-shadow: 0 0 0 3px var(--primary); }
 
@@ -736,4 +772,17 @@ a { color: inherit; text-decoration: none; }
   0% { transform: translateY(-40px) rotate(0); opacity: 0; }
   10% { opacity: 1; }
   100% { transform: translateY(720px) rotate(720deg); opacity: 0; }
+}
+
+/* ------------------- Reduced motion ------------------- */
+/* Honor prefers-reduced-motion: disable all transitions and animations
+   that could cause discomfort. Timer remains fully functional via the
+   numeric countdown — only the arc animation is suppressed. */
+@media (prefers-reduced-motion: reduce) {
+  .timer-arc { transition: none; }
+  .quiz-progress-bar { transition: none; }
+  .score-ring-arc { transition: none; }
+  .btn, .answer { transition: none; }
+  .confetti { animation: none !important; opacity: 0 !important; }
+  .histogram-bar { transition: none; }
 }

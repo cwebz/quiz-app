@@ -20,6 +20,10 @@ const nunito = Nunito({
 export const metadata: Metadata = {
   title: "Smarter Than The Internet",
   description: "Daily 5-question trivia quiz with comparison-based scoring.",
+  icons: {
+    icon: "/duck.png",
+    apple: "/duck.png",
+  },
 };
 
 export const viewport: Viewport = {
@@ -42,7 +46,14 @@ export default function RootLayout({
       className={`${fredoka.variable} ${nunito.variable}`}
       data-theme="lavender"
     >
-      <body>
+      {/*
+        suppressHydrationWarning on <body> only — browser extensions
+        (Grammarly, LastPass, etc.) inject attributes like
+        data-new-gr-c-s-check-loaded onto <body> before React hydrates,
+        which would otherwise throw a hydration mismatch warning in dev.
+        Child elements still get full hydration checks.
+      */}
+      <body suppressHydrationWarning>
         <div className="app">
           <Topbar />
           <main className="page">{children}</main>

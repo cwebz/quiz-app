@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { questionFlags, questions } from "@/db/schema";
 import { getDb, getEnv } from "@/lib/db";
 import { verifyToken } from "@/lib/quiz/token";
@@ -54,10 +54,30 @@ export async function POST(request: Request) {
     return Response.json({ error: "question not found" }, { status: 404 });
   }
 
-  // Record the flag for audit. user_id is nullable so guests are fine.
+  // Deduplicate: one flag per player per question (enforced by DB index too).
+  const identityFilter =
+    state.userId !== null
+      ? eq(questionFlags.userId, state.userId)
+      : state.guestId !== null
+        ? eq(questionFlags.guestId, state.guestId)
+        : null;
+
+  if (identityFilter) {
+    const [alreadyFlagged] = await db
+      .select({ id: questionFlags.id })
+      .from(questionFlags)
+      .where(and(eq(questionFlags.questionId, questionId), identityFilter))
+      .limit(1);
+    if (alreadyFlagged) {
+      return Response.json({ ok: true, alreadyFlagged: true });
+    }
+  }
+
+  // Record the flag for audit. user_id / guest_id are nullable.
   await db.insert(questionFlags).values({
     questionId,
     userId: state.userId,
+    guestId: state.guestId,
     reason,
   });
 

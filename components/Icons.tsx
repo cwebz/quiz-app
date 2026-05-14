@@ -89,4 +89,11 @@ export const Ico = {
       <line x1="21" y1="21" x2="16.5" y2="16.5" />
     </svg>
   ),
+  Menu: (p: IconProps) => (
+    <svg {...stroke(p)} strokeWidth={2.4}>
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="17" x2="20" y2="17" />
+    </svg>
+  ),
 };

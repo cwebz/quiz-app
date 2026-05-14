@@ -7,15 +7,19 @@
 		"nodejs_compat",
 		"global_fetch_strictly_public"
 	],
+	"routes": [
+		{ "pattern": "smarterthantheinternet.com", "custom_domain": true },
+		{ "pattern": "www.smarterthantheinternet.com", "custom_domain": true }
+	],
 	"assets": {
 		"directory": ".open-next/assets",
 		"binding": "ASSETS"
 	},
-	"triggers": {
-		"crons": [
-			"55 23 * * *"
-		]
-	},
+	// "triggers": {
+	// 	"crons": [
+	// 		"55 23 * * *"
+	// 	]
+	// },
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -27,7 +31,7 @@
 	"kv_namespaces": [
 		{
 			"binding": "QUIZ_KV",
-			"id": "PLACEHOLDER_RUN_WRANGLER_KV_NAMESPACE_CREATE"
+			"id": "1c5d08cc6b634a4eb98ed1a923fe5f6c"
 		}
 	]
 }

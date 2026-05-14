@@ -11,7 +11,7 @@ export function Mascot({
 }) {
   return (
     <Image
-      src="/quizby.png"
+      src="/duck.png"
       alt="Quizby — Smarter mascot"
       width={size}
       height={size}

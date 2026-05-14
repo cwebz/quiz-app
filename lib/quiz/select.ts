@@ -40,39 +40,40 @@ export async function selectDailyQuiz(
 
   const recentlyUsed = await collectRecentlyUsedQuestionIds(db, quizDate);
 
-  // Grab a random pool of approved questions, then split into "fresh" and
-  // "fallback" client-side. This avoids gnarly NOT IN with json_each in SQL
-  // and works fine at our scale (a few thousand approved questions).
+  // Fetch every approved question (id + category) in random order.
+  // No LIMIT so all categories are always represented in the pool.
+  // At ~2k rows this is trivial; revisit with per-category queries if > ~50k.
   const pool = await db
-    .select({ id: questions.id })
+    .select({ id: questions.id, category: questions.category })
     .from(questions)
     .where(eq(questions.status, "approved"))
-    .orderBy(sql`RANDOM()`)
-    .limit(200);
+    .orderBy(sql`RANDOM()`);
 
-  if (pool.length < QUESTIONS_PER_QUIZ) {
-    throw new Error(
-      `Not enough approved questions: have ${pool.length}, need ${QUESTIONS_PER_QUIZ}`,
-    );
-  }
-
-  const fresh: number[] = [];
-  const fallback: number[] = [];
+  // Group by category. Within each bucket the order is already random.
+  const byCategory = new Map<string, number[]>();
   for (const row of pool) {
-    if (recentlyUsed.has(row.id)) fallback.push(row.id);
-    else fresh.push(row.id);
-    if (fresh.length === QUESTIONS_PER_QUIZ) break;
-  }
-  const chosen = fresh.slice(0, QUESTIONS_PER_QUIZ);
-  for (const id of fallback) {
-    if (chosen.length >= QUESTIONS_PER_QUIZ) break;
-    chosen.push(id);
+    const bucket = byCategory.get(row.category);
+    if (bucket) bucket.push(row.id);
+    else byCategory.set(row.category, [row.id]);
   }
 
-  if (chosen.length < QUESTIONS_PER_QUIZ) {
+  if (byCategory.size < QUESTIONS_PER_QUIZ) {
     throw new Error(
-      `Could not assemble ${QUESTIONS_PER_QUIZ} questions; got ${chosen.length}`,
+      `Not enough categories with approved questions: have ${byCategory.size} (${[...byCategory.keys()].join(", ")}), need ${QUESTIONS_PER_QUIZ}`,
     );
+  }
+
+  // Shuffle the category list so which 5 categories appear is random each day.
+  const categories = [...byCategory.keys()];
+  shuffleInPlace(categories);
+
+  // Pick one question per category, preferring fresh (not recently used).
+  const chosen: number[] = [];
+  for (const cat of categories) {
+    if (chosen.length >= QUESTIONS_PER_QUIZ) break;
+    const bucket = byCategory.get(cat)!;
+    const fresh = bucket.find((id) => !recentlyUsed.has(id));
+    chosen.push(fresh ?? bucket[0]); // fallback to first (random) if all recently used
   }
 
   const inserted = await db
@@ -109,6 +110,13 @@ async function collectRecentlyUsedQuestionIds(
 
 export function getUtcDateString(date: Date = new Date()): string {
   return date.toISOString().slice(0, 10);
+}
+
+function shuffleInPlace<T>(arr: T[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
 }
 
 function subtractDays(isoDate: string, days: number): string {

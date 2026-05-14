@@ -8,10 +8,14 @@ import { getUtcDateString } from "@/lib/quiz/select";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const guestId = url.searchParams.get("guestId");
+  if (guestId !== null && guestId.length > 64) {
+    return Response.json({ error: "invalid guestId" }, { status: 400 });
+  }
   const date = getUtcDateString();
 
   const session = await auth();
   const userId = session?.userId ?? null;
+  const identity: "user" | "guest" = userId !== null ? "user" : "guest";
 
   const db = await getDb();
   const quiz = await db
@@ -21,10 +25,11 @@ export async function GET(request: Request) {
     .limit(1);
 
   if (quiz.length === 0) {
-    return Response.json({ status: "no-quiz-today", date });
+    return Response.json({ status: "no-quiz-today", date, identity });
   }
 
-  // Signed-in user: look up by userId; guest: by guestId. (No merge in v1.)
+  // Signed-in user: look up by userId; guest: by guestId.
+  // Orphan guest attempts are adopted at sign-in (see auth.ts).
   const existing =
     userId !== null
       ? await findExistingAttempt({
@@ -48,6 +53,7 @@ export async function GET(request: Request) {
       date,
       dailyQuizId: quiz[0].id,
       results: existing,
+      identity,
     });
   }
 
@@ -56,5 +62,6 @@ export async function GET(request: Request) {
     date,
     dailyQuizId: quiz[0].id,
     totalQuestions: quiz[0].questionIds.length,
+    identity,
   });
 }

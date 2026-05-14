@@ -33,6 +33,10 @@ type ProfileData = {
   totalQuizzes: number;
   totalCorrect: number;
   lifetimeScore: number;
+  perfectScores: number;
+  comebackEarned: boolean;
+  hasSpeedDemon: boolean;
+  hasLightning: boolean;
   categories: Array<{
     name: string;
     correct: number;
@@ -96,6 +100,30 @@ async function loadProfile(userId: number): Promise<ProfileData | null> {
     calendar.push({ date: iso, score, isToday: iso === todayIso });
   }
 
+  // Check lifetime Speed Demon / Lightning badges via quiz_attempts.
+  const [speedDemonRow] = await db
+    .select({ id: quizAttempts.id })
+    .from(quizAttempts)
+    .where(
+      and(
+        eq(quizAttempts.userId, userId),
+        eq(quizAttempts.score, 5),
+        gte(quizAttempts.finalScore, 900),
+      ),
+    )
+    .limit(1);
+  const [lightningRow] = await db
+    .select({ id: quizAttempts.id })
+    .from(quizAttempts)
+    .where(
+      and(
+        eq(quizAttempts.userId, userId),
+        eq(quizAttempts.score, 5),
+        gte(quizAttempts.finalScore, 950),
+      ),
+    )
+    .limit(1);
+
   return {
     displayName: userRow.displayName ?? "Player",
     email: userRow.email,
@@ -105,6 +133,10 @@ async function loadProfile(userId: number): Promise<ProfileData | null> {
     totalQuizzes: statsRow?.totalQuizzes ?? 0,
     totalCorrect: statsRow?.totalCorrect ?? 0,
     lifetimeScore: statsRow?.lifetimeScore ?? 0,
+    perfectScores: statsRow?.perfectScores ?? 0,
+    comebackEarned: statsRow?.comebackEarned ?? false,
+    hasSpeedDemon: !!speedDemonRow,
+    hasLightning: !!lightningRow,
     categories: cats.map((c, i) => ({
       name: c.category,
       correct: c.questionsCorrect,
@@ -276,6 +308,12 @@ export default async function ProfilePage() {
                     ? `${day.date} · ${day.score}/5`
                     : `${day.date} · no attempt`
                 }
+                aria-label={
+                  day.score !== null
+                    ? `${day.date}: ${day.score} out of 5`
+                    : `${day.date}: not played`
+                }
+                role="img"
               />
             );
           })}
@@ -292,7 +330,7 @@ export default async function ProfilePage() {
         </div>
         {profile.categories.length === 0 ? (
           <p style={{ color: "var(--ink-soft)", fontSize: 14 }}>
-            No category data yet — finish a few quizzes to start populating
+            No category data yet. Finish a few quizzes to start populating
             this.
           </p>
         ) : (
@@ -324,16 +362,8 @@ export default async function ProfilePage() {
       </div>
 
       <div className="card">
-        <div className="row between">
-          <div>
-            <div className="section-h" style={{ marginBottom: 4 }}>
-              Badges
-            </div>
-            <div className="section-sub">
-              Full badge system lands in Phase 4 — these are derived live from
-              your current stats.
-            </div>
-          </div>
+        <div className="section-h" style={{ marginBottom: 4 }}>
+          Badges
         </div>
         <BadgesGrid profile={profile} />
       </div>
@@ -361,12 +391,13 @@ export default async function ProfilePage() {
 }
 
 function BadgesGrid({ profile }: { profile: ProfileData }) {
+  const best = Math.max(profile.currentStreak, profile.longestStreak);
   const firstSteps = profile.totalQuizzes >= 1;
-  const weekOne = profile.currentStreak >= 7 || profile.longestStreak >= 7;
-  const monthStrong =
-    profile.currentStreak >= 30 || profile.longestStreak >= 30;
-  const centurion =
-    profile.currentStreak >= 100 || profile.longestStreak >= 100;
+  const perfect = profile.perfectScores >= 1;
+  const perfectionist = profile.perfectScores >= 10;
+  const weekOne = best >= 7;
+  const monthStrong = best >= 30;
+  const centurion = best >= 100;
   const masterCategory = profile.categories.find(
     (c) => c.correct >= MASTERY_THRESHOLD,
   );
@@ -381,11 +412,50 @@ function BadgesGrid({ profile }: { profile: ProfileData }) {
         desc="Played your first quiz"
       />
       <BadgeTile
+        unlocked={perfect}
+        tier="gold"
+        icon={<Ico.Check style={{ width: 28, height: 28 }} />}
+        name="Perfect"
+        desc={perfect ? "Scored 5/5" : "Score 5/5 on a quiz"}
+      />
+      <BadgeTile
+        unlocked={perfectionist}
+        tier="gold"
+        icon={<Ico.Brain style={{ width: 28, height: 28 }} />}
+        name="Perfectionist"
+        desc={
+          perfectionist
+            ? "10 perfect scores"
+            : `${profile.perfectScores}/10 perfect scores`
+        }
+      />
+      <BadgeTile
+        unlocked={profile.hasSpeedDemon}
+        tier="gold"
+        icon={<Ico.Bolt style={{ width: 28, height: 28 }} />}
+        name="Speed Demon"
+        desc="5/5 with 900+ points"
+      />
+      <BadgeTile
+        unlocked={profile.hasLightning}
+        tier="master"
+        icon={<Ico.Bolt style={{ width: 28, height: 28 }} />}
+        name="Lightning"
+        desc="5/5 with 950+ points"
+      />
+      <BadgeTile
+        unlocked={profile.comebackEarned}
+        tier="gold"
+        icon={<Ico.Fire style={{ width: 28, height: 28 }} />}
+        name="Comeback"
+        desc="Freeze saved a streak"
+      />
+      <BadgeTile
         unlocked={weekOne}
         tier="silver"
         icon={<Ico.Calendar style={{ width: 28, height: 28 }} />}
         name="Week One"
-        desc={`7-day streak${weekOne ? "" : ` · ${7 - profile.longestStreak} to go`}`}
+        desc={weekOne ? "7-day streak" : `${Math.max(0, 7 - best)} days to go`}
       />
       <BadgeTile
         unlocked={monthStrong}
@@ -395,7 +465,7 @@ function BadgesGrid({ profile }: { profile: ProfileData }) {
         desc={
           monthStrong
             ? "30-day streak"
-            : `30-day streak · ${Math.max(0, 30 - profile.longestStreak)} to go`
+            : `${Math.max(0, 30 - best)} days to go`
         }
       />
       <BadgeTile
@@ -406,7 +476,7 @@ function BadgesGrid({ profile }: { profile: ProfileData }) {
         desc={
           centurion
             ? "100-day streak"
-            : `100-day streak · ${Math.max(0, 100 - profile.longestStreak)} to go`
+            : `${Math.max(0, 100 - best)} days to go`
         }
       />
       {masterCategory && (

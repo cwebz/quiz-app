@@ -1,5 +1,5 @@
-import { and, eq, gt, sql } from "drizzle-orm";
-import { dailyQuizzes, questions, quizAttempts } from "@/db/schema";
+import { and, eq, gt, gte, sql } from "drizzle-orm";
+import { dailyQuizzes, questions, quizAttempts, users } from "@/db/schema";
 import { Sparkline } from "@/components/Sparkline";
 import { getDb } from "@/lib/db";
 import { getUtcDateString } from "@/lib/quiz/select";
@@ -15,6 +15,9 @@ type DashboardData = {
   todayAvgScore: number | null;
   todayDistribution: number[];
   hasTodayQuiz: boolean;
+  attemptSpark: number[];
+  avgScoreSpark: number[];
+  signupSpark: number[];
 };
 
 async function loadDashboard(): Promise<DashboardData> {
@@ -72,6 +75,45 @@ async function loadDashboard(): Promise<DashboardData> {
     }
   }
 
+  // 8-day attempt + avg-score sparklines from quiz_attempts → daily_quizzes.
+  const sparkCutoff = utcDaysAgo(today, 8);
+  const sparkRows = await db
+    .select({
+      date: dailyQuizzes.quizDate,
+      count: sql<number>`count(*)`,
+      avgScore: sql<number>`avg(${quizAttempts.score})`,
+    })
+    .from(quizAttempts)
+    .innerJoin(dailyQuizzes, eq(quizAttempts.dailyQuizId, dailyQuizzes.id))
+    .where(gte(dailyQuizzes.quizDate, sparkCutoff))
+    .groupBy(dailyQuizzes.quizDate);
+  const sparkByDate = new Map(sparkRows.map((r) => [r.date, r]));
+
+  const attemptSpark: number[] = [];
+  const avgScoreSpark: number[] = [];
+  for (let i = 7; i >= 0; i--) {
+    const d = utcDaysAgo(today, i);
+    const row = sparkByDate.get(d);
+    attemptSpark.push(row?.count ?? 0);
+    avgScoreSpark.push(row ? Number(row.avgScore.toFixed(2)) : 0);
+  }
+
+  // 7-day signup sparkline from users.created_at.
+  const signupCutoff = utcDaysAgo(today, 7);
+  const signupRows = await db
+    .select({
+      date: sql<string>`substr(${users.createdAt}, 1, 10)`,
+      count: sql<number>`count(*)`,
+    })
+    .from(users)
+    .where(gte(users.createdAt, signupCutoff))
+    .groupBy(sql`substr(${users.createdAt}, 1, 10)`);
+  const signupByDate = new Map(signupRows.map((r) => [r.date, r.count]));
+  const signupSpark: number[] = [];
+  for (let i = 6; i >= 0; i--) {
+    signupSpark.push(signupByDate.get(utcDaysAgo(today, i)) ?? 0);
+  }
+
   return {
     todayDate: today,
     totalQuestions: totalRow?.count ?? 0,
@@ -83,7 +125,16 @@ async function loadDashboard(): Promise<DashboardData> {
     todayAvgScore,
     todayDistribution: distribution,
     hasTodayQuiz: !!todayQuiz,
+    attemptSpark,
+    avgScoreSpark,
+    signupSpark,
   };
+}
+
+function utcDaysAgo(fromIso: string, days: number): string {
+  const d = new Date(`${fromIso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
 }
 
 function fmtDateLong(iso: string): string {
@@ -98,11 +149,7 @@ function fmtDateLong(iso: string): string {
 export default async function AdminDashboardPage() {
   const data = await loadDashboard();
 
-  // TODO Phase 3+: replace stubbed time series with real D1 rollups.
-  const stubAttemptSpark = [820, 910, 870, 1100, 1240, 1180, 1290, 1340];
-  const stubAvgSpark = [2.6, 2.7, 2.8, 2.7, 2.9, 2.85, 2.8, 2.84];
-  const stubSignupSpark = [14, 18, 22, 28, 30, 38, 42];
-  const stubPoolSpark = [1390, 1395, 1402, 1410, 1420, 1425, data.approvedQuestions];
+  const poolSpark = [data.approvedQuestions];
 
   return (
     <>
@@ -130,19 +177,19 @@ export default async function AdminDashboardPage() {
           <div>
             <span className="delta flat">live</span>
           </div>
-          <Sparkline values={stubAttemptSpark} color="var(--primary)" />
+          <Sparkline values={data.attemptSpark} color="var(--primary)" />
         </div>
         <div className="kpi">
           <div className="lbl">Avg score today</div>
           <div className="num">
             {data.todayAvgScore !== null
               ? data.todayAvgScore.toFixed(2)
-              : "—"}
+              : "·"}
           </div>
           <div>
             <span className="delta flat">/ 5 correct</span>
           </div>
-          <Sparkline values={stubAvgSpark} color="var(--mint)" />
+          <Sparkline values={data.avgScoreSpark} color="var(--mint)" />
         </div>
         <div className="kpi">
           <div className="lbl">Pending review</div>
@@ -158,7 +205,7 @@ export default async function AdminDashboardPage() {
                 : "nothing waiting"}
             </span>
           </div>
-          <Sparkline values={stubSignupSpark} color="var(--pink)" />
+          <Sparkline values={data.signupSpark} color="var(--pink)" />
         </div>
         <div className="kpi">
           <div className="lbl">Approved pool</div>
@@ -177,17 +224,17 @@ export default async function AdminDashboardPage() {
                 ? "healthy"
                 : data.approvedQuestions >= 500
                   ? "watch"
-                  : "low — top up"}
+                  : "low, top up"}
             </span>
           </div>
-          <Sparkline values={stubPoolSpark} color="var(--orange)" />
+          <Sparkline values={poolSpark} color="var(--orange)" />
         </div>
       </div>
 
       <div className="card">
         <div className="row between">
           <div className="section-h" style={{ marginBottom: 0 }}>
-            Operating cost — this month
+            Operating cost · this month
           </div>
           <span className="chip chip--mint">Phase 5</span>
         </div>

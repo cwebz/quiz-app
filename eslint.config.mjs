@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // opennextjs build output — generated files, not source:
+    ".open-next/**",
   ]),
 ]);
 

@@ -63,7 +63,7 @@ export default async function Home() {
       </div>
 
       <div className="landing-mascot">
-        <Mascot size={120} />
+        <Mascot size={160} />
       </div>
 
       <h1>
@@ -86,7 +86,7 @@ export default async function Home() {
             fontSize: 14,
           }}
         >
-          Today&apos;s quiz hasn&apos;t been queued yet — check back shortly.
+          Today&apos;s quiz hasn&apos;t been queued yet. Check back shortly.
         </p>
       ) : alreadyPlayed ? (
         <PlayedTodayCard
@@ -143,7 +143,7 @@ function PlayedTodayCard({
           </div>
           <div style={{ color: "var(--ink-soft)", fontSize: 14 }}>
             {totalPlayersToday <= 1
-              ? "First player today — come back later to see how others did"
+              ? "First player today. Come back later to see how others did."
               : `Top ${Math.max(1, 100 - percentile)}% so far · come back at midnight UTC for a new quiz`}
           </div>
         </div>

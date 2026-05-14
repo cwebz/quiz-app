@@ -57,8 +57,19 @@ export type QuizResults = {
   percentile: number;
   /** Count of completed attempts today, including the user's. */
   totalPlayersToday: number;
-  /** Present only for authenticated users — fed straight to the streak card. */
-  userStreak?: { current: number; longest: number };
+  /** Score distribution for today: index = correct count (0–5), value = player count. */
+  scoreDistribution: number[];
+  /** Present only for authenticated users. */
+  userStreak?: {
+    current: number;
+    longest: number;
+    perfectScores: number;
+    comebackEarned: boolean;
+  };
+  /** True when a weekly freeze auto-applied to preserve the user's streak. */
+  freezeApplied?: boolean;
+  /** True the first time ever a freeze saved this user's streak. */
+  comebackJustEarned?: boolean;
   perQuestion: Array<{
     questionId: number;
     text: string;
@@ -370,8 +381,15 @@ async function persistComplete(opts: {
 
   // For authenticated users only: roll up lifetime stats + category mastery.
   // (Per PRD §15 guest → account merge is deferred to v2.)
+  let freezeApplied = false;
+  let comebackJustEarned = false;
   if (state.userId !== null) {
-    await updateUserStats(db, state.userId, correct, final);
+    ({ freezeApplied, comebackJustEarned } = await updateUserStats(
+      db,
+      state.userId,
+      correct,
+      final,
+    ));
     await updateCategoryMastery(db, state.userId, state.answered);
   }
 
@@ -382,6 +400,7 @@ async function persistComplete(opts: {
     final,
     state.userId,
     state.answered,
+    { freezeApplied, comebackJustEarned },
   );
 }
 
@@ -391,14 +410,24 @@ function utcDateNDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function getIsoWeekMonday(date: Date = new Date()): string {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  const dow = d.getUTCDay(); // 0 = Sunday
+  const daysSinceMonday = dow === 0 ? 6 : dow - 1;
+  d.setUTCDate(d.getUTCDate() - daysSinceMonday);
+  return d.toISOString().slice(0, 10);
+}
+
 async function updateUserStats(
   db: DB,
   userId: number,
   correctOnQuiz: number,
   finalScoreValue: number,
-): Promise<void> {
+): Promise<{ freezeApplied: boolean; comebackJustEarned: boolean }> {
   const today = utcDateNDaysAgo(0);
   const yesterday = utcDateNDaysAgo(1);
+  const currentMonday = getIsoWeekMonday();
 
   const [existing] = await db
     .select()
@@ -415,23 +444,34 @@ async function updateUserStats(
       totalCorrect: correctOnQuiz,
       lifetimeScore: finalScoreValue,
       lastPlayedDate: today,
+      perfectScores: correctOnQuiz === 5 ? 1 : 0,
+      weekStartDate: currentMonday,
     });
-    return;
+    return { freezeApplied: false, comebackJustEarned: false };
   }
 
-  // Streak math. Freeze logic (PRD §10) is Phase 4 polish — for v1
-  // a missed day breaks the streak. Same-day replay is blocked upstream
-  // by the unique constraint, but we guard anyway.
+  // Reset weekly freeze counter when a new ISO week starts.
+  const isNewWeek = existing.weekStartDate !== currentMonday;
+  const effectiveFreezesUsed = isNewWeek ? 0 : existing.freezesUsedThisWeek;
+
+  // Streak math (PRD §10). Same-day replay is blocked upstream by the
+  // unique constraint, but we guard anyway.
   let newStreak = existing.currentStreak;
+  let freezeApplied = false;
   if (existing.lastPlayedDate === today) {
-    // No-op: shouldn't happen given the (user_id, daily_quiz_id) unique
-    // constraint, but if it does we preserve the existing streak.
+    // No-op.
   } else if (existing.lastPlayedDate === yesterday) {
+    newStreak = existing.currentStreak + 1;
+  } else if (existing.currentStreak > 0 && effectiveFreezesUsed < 1) {
+    // Missed at least one day — auto-apply the weekly freeze if available.
+    freezeApplied = true;
     newStreak = existing.currentStreak + 1;
   } else {
     newStreak = 1;
   }
+
   const newLongest = Math.max(existing.longestStreak, newStreak);
+  const comebackJustEarned = freezeApplied && !existing.comebackEarned;
 
   await db
     .update(userStats)
@@ -442,8 +482,16 @@ async function updateUserStats(
       totalCorrect: existing.totalCorrect + correctOnQuiz,
       lifetimeScore: existing.lifetimeScore + finalScoreValue,
       lastPlayedDate: today,
+      freezesUsedThisWeek: freezeApplied
+        ? effectiveFreezesUsed + 1
+        : effectiveFreezesUsed,
+      weekStartDate: currentMonday,
+      perfectScores: existing.perfectScores + (correctOnQuiz === 5 ? 1 : 0),
+      comebackEarned: existing.comebackEarned || comebackJustEarned,
     })
     .where(eq(userStats.userId, userId));
+
+  return { freezeApplied, comebackJustEarned };
 }
 
 async function updateCategoryMastery(
@@ -526,6 +574,10 @@ async function loadResults(
   finalScoreValue: number,
   userId: number | null,
   answered: AnsweredQuestion[],
+  freezeData: { freezeApplied: boolean; comebackJustEarned: boolean } = {
+    freezeApplied: false,
+    comebackJustEarned: false,
+  },
 ): Promise<QuizResults> {
   const rows =
     answered.length > 0
@@ -542,24 +594,38 @@ async function loadResults(
   const byId = new Map(rows.map((r) => [r.id, r]));
   const totalTime = answered.reduce((s, a) => s + a.timeTakenMs, 0);
 
-  const { percentile, total: totalPlayersToday } = await computeLivePercentile(
-    db,
-    dailyQuizId,
-    finalScoreValue,
-  );
+  const [{ percentile, total: totalPlayersToday }, scoreDistribution] =
+    await Promise.all([
+      computeLivePercentile(db, dailyQuizId, finalScoreValue),
+      computeScoreDistribution(db, dailyQuizId),
+    ]);
 
-  let userStreak: { current: number; longest: number } | undefined;
+  let userStreak:
+    | {
+        current: number;
+        longest: number;
+        perfectScores: number;
+        comebackEarned: boolean;
+      }
+    | undefined;
   if (userId !== null) {
     const [stats] = await db
       .select({
         current: userStats.currentStreak,
         longest: userStats.longestStreak,
+        perfectScores: userStats.perfectScores,
+        comebackEarned: userStats.comebackEarned,
       })
       .from(userStats)
       .where(eq(userStats.userId, userId))
       .limit(1);
     if (stats) {
-      userStreak = { current: stats.current, longest: stats.longest };
+      userStreak = {
+        current: stats.current,
+        longest: stats.longest,
+        perfectScores: stats.perfectScores,
+        comebackEarned: stats.comebackEarned,
+      };
     }
   }
 
@@ -570,7 +636,10 @@ async function loadResults(
     totalTimeMs: totalTime,
     percentile,
     totalPlayersToday,
+    scoreDistribution,
     userStreak,
+    freezeApplied: freezeData.freezeApplied || undefined,
+    comebackJustEarned: freezeData.comebackJustEarned || undefined,
     perQuestion: answered.map((a) => {
       const q = byId.get(a.questionId);
       return {
@@ -584,6 +653,22 @@ async function loadResults(
       };
     }),
   };
+}
+
+async function computeScoreDistribution(
+  db: DB,
+  dailyQuizId: number,
+): Promise<number[]> {
+  const rows = await db
+    .select({ score: quizAttempts.score, count: sql<number>`count(*)` })
+    .from(quizAttempts)
+    .where(eq(quizAttempts.dailyQuizId, dailyQuizId))
+    .groupBy(quizAttempts.score);
+  const dist = [0, 0, 0, 0, 0, 0];
+  for (const row of rows) {
+    if (row.score >= 0 && row.score <= 5) dist[row.score] = row.count;
+  }
+  return dist;
 }
 
 async function fetchQuestion(db: DB, id: number): Promise<QuestionRow> {

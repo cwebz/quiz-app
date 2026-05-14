@@ -43,8 +43,11 @@ export const questionFlags = sqliteTable("question_flags", {
     .notNull()
     .references(() => questions.id),
   userId: integer("user_id").references(() => users.id),
+  guestId: text("guest_id"),
   reason: text("reason"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
+  // Partial unique indexes (question_flags_user_unq / question_flags_guest_unq)
+  // enforced via migration 0003_flag_dedup.sql — one flag per player per question.
 });

@@ -5,6 +5,7 @@ import { userStats, users } from "@/db/schema";
 import { isAdminEmail } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 import { Ico } from "./Icons";
+import { MobileNavMenu } from "./MobileNavMenu";
 import { SignInButton } from "./SignInButton";
 import { TopnavLinks } from "./TopnavLinks";
 
@@ -40,6 +41,7 @@ export async function Topbar() {
 
   return (
     <header className="topbar">
+      <MobileNavMenu showAdmin={isAdmin} />
       <Link
         href="/"
         className="brand"

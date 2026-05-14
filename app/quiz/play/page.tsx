@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfettiBurst } from "@/components/ConfettiBurst";
@@ -125,6 +126,11 @@ export default function QuizPlayPage() {
       id = crypto.randomUUID();
       localStorage.setItem(GUEST_ID_KEY, id);
     }
+    // Mirror the guestId into a cookie so the Auth.js jwt callback can adopt
+    // any orphan quiz_attempts for this guest into the user's account on
+    // sign-in. localStorage isn't visible to the server during OAuth.
+    document.cookie = `stti.gid=${id}; Path=/; Max-Age=${60 * 60 * 24 * 90}; SameSite=Lax; Secure`;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setGuestId(id);
   }, []);
 
@@ -139,9 +145,15 @@ export default function QuizPlayPage() {
     //    "playing" cache: drop into the existing question with the saved
     //    deadline. "awaiting" cache (refresh during feedback): leave UI
     //    in loading state and redeem the advance token below.
-    const cached = loadCachedSession(today);
-    const hasCachedHydration = cached?.kind === "playing";
+    //
+    //    Note: cached tokens carry the identity (guestId/userId) baked in
+    //    at issue time. If the caller is now signed in but the cache was
+    //    written as a guest, the /today response below will drop the cache
+    //    so we re-issue against the current identity.
+    let cached = loadCachedSession(today);
+    let hasCachedHydration = cached?.kind === "playing";
     if (cached?.kind === "playing") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPhase({
         kind: "playing",
         token: cached.token,
@@ -173,6 +185,16 @@ export default function QuizPlayPage() {
           clearCachedSession();
           setPhase({ kind: "results", results: todayData.results });
           return;
+        }
+
+        // The cached session token was issued for whichever identity the
+        // player had when it was written. If they've since signed in, the
+        // token is bound to the old guestId and any finished attempts get
+        // adopted at sign-in (auth.ts) — drop the cache and start fresh.
+        if (todayData.identity === "user" && cached !== null) {
+          clearCachedSession();
+          cached = null;
+          hasCachedHydration = false;
         }
 
         // Server says "ready". Decide how to enter:
@@ -455,18 +477,20 @@ export default function QuizPlayPage() {
 }
 
 type TodayResponse =
-  | { status: "no-quiz-today"; date: string }
+  | { status: "no-quiz-today"; date: string; identity: "user" | "guest" }
   | {
       status: "already-played";
       date: string;
       dailyQuizId: number;
       results: QuizResults;
+      identity: "user" | "guest";
     }
   | {
       status: "ready";
       date: string;
       dailyQuizId: number;
       totalQuestions: number;
+      identity: "user" | "guest";
     };
 
 function LoadingScreen() {
@@ -534,32 +558,38 @@ function QuizScreen({
   onPick: (answer: string) => void;
   onAdvance: () => void;
 }) {
+  const [trackedDeadline, setTrackedDeadline] = useState(deadline);
   const [remaining, setRemaining] = useState(() =>
     deadline ? Math.max(0, deadline - Date.now()) : 0,
   );
 
-  // Tick the countdown only while playing (not after reveal).
-  useEffect(() => {
-    if (!deadline) return;
-    const tick = () => setRemaining(Math.max(0, deadline - Date.now()));
-    tick();
-    const id = setInterval(tick, 100);
-    return () => clearInterval(id);
-  }, [deadline]);
+  // Snap remaining to the new deadline synchronously so the first paint of a
+  // new question shows a full arc — otherwise the stale 0 from the prior
+  // question causes the CSS transition to slowly refill the circle.
+  if (deadline !== trackedDeadline) {
+    setTrackedDeadline(deadline);
+    // eslint-disable-next-line react-hooks/purity
+    setRemaining(deadline ? Math.max(0, deadline - Date.now()) : 0);
+  }
 
-  // Auto-submit empty answer if time runs out.
+  // Tick the countdown and auto-submit on timeout. Both live in the same
+  // effect so the auto-submit checks `deadline - Date.now()` directly rather
+  // than the `remaining` state, avoiding a race where stale remaining=0
+  // from the revealed phase fires prematurely on a new question.
   const timedOutRef = useRef(false);
   useEffect(() => {
-    if (deadline && remaining <= 0 && selected === null && !timedOutRef.current) {
-      timedOutRef.current = true;
-      onPick("");
-    }
-  }, [remaining, deadline, selected, onPick]);
-
-  // Reset the timed-out latch when a new question starts.
-  useEffect(() => {
-    timedOutRef.current = false;
-  }, [questionIndex]);
+    timedOutRef.current = false; // reset for each new deadline (= new question)
+    if (!deadline) return;
+    const id = setInterval(() => {
+      const left = deadline - Date.now();
+      setRemaining(Math.max(0, left));
+      if (left <= 0 && !timedOutRef.current) {
+        timedOutRef.current = true;
+        onPick("");
+      }
+    }, 100);
+    return () => clearInterval(id);
+  }, [deadline, onPick]);
 
   const secondsLeft = Math.ceil(remaining / 1000);
   const timerWarn = deadline !== null && secondsLeft <= 5;
@@ -575,14 +605,14 @@ function QuizScreen({
   return (
     <div className="quiz-shell">
       <div className="quiz-header">
-        <a
+        <Link
           href="/"
           className="icon-btn"
           aria-label="Exit"
           title="Exit"
         >
           <Ico.X style={{ width: 18, height: 18 }} />
-        </a>
+        </Link>
         <div className="quiz-counter">
           {questionIndex + 1}/{totalQuestions}
         </div>
@@ -596,6 +626,7 @@ function QuizScreen({
           <svg width="56" height="56">
             <circle className="timer-track" cx="28" cy="28" r="22" />
             <circle
+              key={deadline ?? "idle"}
               className="timer-arc"
               cx="28"
               cy="28"
@@ -646,6 +677,8 @@ function QuizScreen({
       {revealed ? (
         <div
           className={`feedback ${revealed.feedback.wasCorrect ? "correct" : "wrong"}`}
+          role="status"
+          aria-live="polite"
         >
           <div className="feedback-icon">
             {revealed.feedback.wasCorrect ? (
@@ -665,7 +698,7 @@ function QuizScreen({
             <div className="feedback-sub">
               {revealed.feedback.correctRate !== null
                 ? `${revealed.feedback.correctRate}% of players have gotten this right · `
-                : "First answer ever — you set the rate · "}
+                : "First answer ever · you set the rate · "}
               {(revealed.feedback.timeTakenMs / 1000).toFixed(1)}s · +
               {revealed.feedback.pointsEarned} points
             </div>
@@ -689,7 +722,7 @@ function QuizScreen({
       ) : (
         token && (
           <div className="row" style={{ justifyContent: "flex-end" }}>
-            <ReportQuestionButton token={token} questionId={question.id} />
+            <ReportQuestionButton key={question.id} token={token} />
           </div>
         )
       )}
@@ -697,23 +730,10 @@ function QuizScreen({
   );
 }
 
-function ReportQuestionButton({
-  token,
-  questionId,
-}: {
-  token: string;
-  questionId: number;
-}) {
-  // Local state machine: idle → loading → reported. Keyed on questionId so
-  // that advancing to a new question resets the button automatically.
+function ReportQuestionButton({ token }: { token: string }) {
+  // State resets automatically when the parent passes a new `key` on question advance.
   const [reported, setReported] = useState(false);
   const [loading, setLoading] = useState(false);
-  const lastQuestionRef = useRef(questionId);
-  if (lastQuestionRef.current !== questionId) {
-    lastQuestionRef.current = questionId;
-    if (reported) setReported(false);
-    if (loading) setLoading(false);
-  }
 
   const handleClick = async () => {
     if (loading || reported) return;
@@ -745,7 +765,7 @@ function ReportQuestionButton({
       aria-live="polite"
     >
       <Ico.Flag style={{ width: 12, height: 12 }} />
-      {reported ? "Thanks — we'll review" : loading ? "Reporting…" : "Report question"}
+      {reported ? "Thanks, we'll review" : loading ? "Reporting…" : "Report question"}
     </button>
   );
 }
@@ -763,8 +783,7 @@ function ResultsScreen({ results }: { results: QuizResults }) {
   const correct = results.correctCount;
   const percentile = results.percentile;
   const playersToday = results.totalPlayersToday;
-  // TODO Phase 3+: replace with real today's score histogram from D1.
-  const stubDistribution = [4, 14, 26, 28, 18, 10];
+  const distribution = results.scoreDistribution;
 
   return (
     <div className="results">
@@ -881,6 +900,9 @@ function ResultsScreen({ results }: { results: QuizResults }) {
         finalScore={results.finalScore}
         totalSec={totalSec}
         percentile={percentile}
+        perfectScores={results.userStreak?.perfectScores}
+        comebackJustEarned={results.comebackJustEarned}
+        freezeApplied={results.freezeApplied}
       />
 
       <div className="card">
@@ -890,9 +912,9 @@ function ResultsScreen({ results }: { results: QuizResults }) {
         </div>
         <div className="histogram">
           {(() => {
-            const maxBucket = Math.max(...stubDistribution, 1);
+            const maxBucket = Math.max(...distribution, 1);
             const maxBarPx = 80;
-            return stubDistribution.map((p, i) => {
+            return distribution.map((p, i) => {
               const barPx = Math.max(8, Math.round((p / maxBucket) * maxBarPx));
               return (
                 <div
@@ -973,7 +995,7 @@ function StreakCard({ streak }: { streak: number }) {
       return "Streak starts today. Come back tomorrow to keep it going.";
     }
     if (n < 7) {
-      return `Keep going — ${7 - n} day${7 - n === 1 ? "" : "s"} to Week One badge.`;
+      return `Keep going, ${7 - n} day${7 - n === 1 ? "" : "s"} to Week One badge.`;
     }
     if (n < 30) {
       return `${30 - n} day${30 - n === 1 ? "" : "s"} until Month Strong.`;
@@ -1077,8 +1099,8 @@ function ShareCard({
 }) {
   const emojiRow = perQuestion.map((q) => (q.wasCorrect ? "✅" : "❌")).join("");
   const shareText = [
-    `Smarter Than The Internet — ${dateShort}`,
-    `${emojiRow}  ${correct}/${total} — ${finalScore} pts`,
+    `Smarter Than The Internet · ${dateShort}`,
+    `${emojiRow}  ${correct}/${total} · ${finalScore} pts`,
     `Beat ${percentile}% of players · ${totalSec.toFixed(0)}s`,
     "smarterthantheinternet.com",
   ].join("\n");
@@ -1122,57 +1144,109 @@ function BadgesStrip({
   finalScore,
   totalSec,
   percentile,
+  perfectScores,
+  comebackJustEarned,
+  freezeApplied,
 }: {
   correct: number;
   total: number;
   finalScore: number;
   totalSec: number;
   percentile: number;
+  perfectScores?: number;
+  comebackJustEarned?: boolean;
+  freezeApplied?: boolean;
 }) {
   const perfect = correct === total;
-  const fast = perfect && finalScore >= 900;
+  const speedDemon = perfect && finalScore >= 900;
+  const lightning = perfect && finalScore >= 950;
   const top10 = percentile >= 90;
+  const top1 = percentile >= 99;
+  const perfectionist = (perfectScores ?? 0) >= 10;
+  const signedIn = perfectScores !== undefined;
 
   return (
     <div className="card badges-strip-card">
       <div className="row between">
-        <h3>
-          Badges earned today
-          <span className="chip chip--ghost" style={{ marginLeft: 8 }}>
-            Phase 4
-          </span>
-        </h3>
+        <h3>Badges earned today</h3>
       </div>
+      {freezeApplied && (
+        <div
+          className="chip chip--yellow"
+          style={{ marginBottom: 12, fontSize: 13 }}
+        >
+          <Ico.Fire style={{ width: 13, height: 13 }} />{" "}
+          {comebackJustEarned
+            ? "Freeze used: streak saved! Comeback badge earned."
+            : "Freeze used: streak preserved."}
+        </div>
+      )}
       <div className="badges-strip">
-        <div className={`badge ${fast ? "gold" : "locked"}`}>
+        <div className={`badge ${perfect ? "gold" : "locked"}`}>
+          <div className="badge-medal">
+            <Ico.Check style={{ width: 28, height: 28 }} />
+          </div>
+          <div className="badge-name">Perfect</div>
+          <div className="badge-desc">{perfect ? "5/5 correct" : "Score 5/5"}</div>
+        </div>
+        <div className={`badge ${speedDemon ? "gold" : "locked"}`}>
           <div className="badge-medal">
             <Ico.Bolt style={{ width: 30, height: 30 }} />
           </div>
           <div className="badge-name">Speed Demon</div>
           <div className="badge-desc">
-            {fast ? `${total}/${total} in ${totalSec.toFixed(0)}s` : "5/5 + 900 pts"}
+            {speedDemon
+              ? `${total}/${total} · ${totalSec.toFixed(0)}s`
+              : "5/5 + 900 pts"}
           </div>
         </div>
-        <div className={`badge ${top10 ? "" : "locked"}`}>
+        <div className={`badge ${lightning ? "master" : "locked"}`}>
+          <div className="badge-medal">
+            <Ico.Bolt style={{ width: 30, height: 30 }} />
+          </div>
+          <div className="badge-name">Lightning</div>
+          <div className="badge-desc">
+            {lightning ? `${finalScore} pts` : "5/5 + 950 pts"}
+          </div>
+        </div>
+        <div className={`badge ${top1 ? "master" : top10 ? "gold" : "locked"}`}>
           <div className="badge-medal">
             <Ico.Trophy style={{ width: 28, height: 28 }} />
           </div>
-          <div className="badge-name">Top 10%</div>
-          <div className="badge-desc">Today&apos;s standing</div>
+          <div className="badge-name">{top1 ? "Top 1%" : "Top 10%"}</div>
+          <div className="badge-desc">
+            {top10 ? "Today's standing" : "Finish in top 10%"}
+          </div>
         </div>
-        <div className="badge locked">
+        <div
+          className={`badge ${comebackJustEarned ? "gold" : signedIn ? "locked" : "locked"}`}
+        >
+          <div className="badge-medal">
+            <Ico.Fire style={{ width: 26, height: 26 }} />
+          </div>
+          <div className="badge-name">Comeback</div>
+          <div className="badge-desc">
+            {comebackJustEarned
+              ? "Freeze saved your streak!"
+              : signedIn
+                ? "Freeze saves a streak"
+                : "Sign in to track"}
+          </div>
+        </div>
+        <div
+          className={`badge ${perfectionist ? "gold" : signedIn ? "locked" : "locked"}`}
+        >
           <div className="badge-medal">
             <Ico.Brain style={{ width: 28, height: 28 }} />
           </div>
           <div className="badge-name">Perfectionist</div>
-          <div className="badge-desc">Sign in to track</div>
-        </div>
-        <div className="badge locked">
-          <div className="badge-medal">
-            <Ico.Fire style={{ width: 26, height: 26 }} />
+          <div className="badge-desc">
+            {signedIn
+              ? perfectionist
+                ? "10 perfect scores"
+                : `${perfectScores}/10 perfect scores`
+              : "Sign in to track"}
           </div>
-          <div className="badge-name">Week One</div>
-          <div className="badge-desc">Sign in to track</div>
         </div>
       </div>
     </div>

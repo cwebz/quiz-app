@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
+import { auth } from "@/auth";
 import { questions } from "@/db/schema";
+import { isAdminEmail } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 
 type Action = "approve" | "reject" | "move-to-pending" | "dismiss";
@@ -14,6 +16,13 @@ export async function POST(
   request: Request,
   ctx: { params: Promise<{ id: string }> },
 ) {
+  // Defense-in-depth: middleware covers /admin/* but verify here too in case
+  // the route is ever invoked outside the normal middleware chain.
+  const session = await auth();
+  if (!isAdminEmail(session?.user?.email ?? null)) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const { id: idStr } = await ctx.params;
   const id = Number.parseInt(idStr, 10);
   if (!Number.isFinite(id) || id <= 0) {

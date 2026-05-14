@@ -15,9 +15,13 @@ export async function GET() {
     .select({ count: sql<number>`count(*)` })
     .from(questions);
 
+  await env.QUIZ_KV.put("health:check", "ok");
+  const kvCheck = await env.QUIZ_KV.get("health:check");
+  await env.QUIZ_KV.delete("health:check");
+
   return Response.json({
     ok: true,
-    tables: tablesResult.results.map((r) => r.name),
     questionCount: count,
+    kv: kvCheck === "ok" ? "ok" : "fail",
   });
 }

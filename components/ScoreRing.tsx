@@ -23,12 +23,6 @@ export function ScoreRing({
   return (
     <div className="score-ring" style={{ width: size, height: size }}>
       <svg width={size} height={size}>
-        <defs>
-          <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="var(--primary)" />
-            <stop offset="100%" stopColor="var(--pink)" />
-          </linearGradient>
-        </defs>
         <circle
           className="score-ring-track"
           cx={size / 2}
@@ -44,9 +38,6 @@ export function ScoreRing({
           strokeDasharray={C}
           strokeDashoffset={off}
           strokeWidth={compact ? 8 : 14}
-          style={{
-            transition: "stroke-dashoffset 1.2s cubic-bezier(.4,1.4,.5,1)",
-          }}
         />
       </svg>
       <div className="score-ring-center">
