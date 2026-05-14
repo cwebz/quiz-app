@@ -113,6 +113,8 @@ async function insertOne(
       category: q.category,
       difficulty: q.difficulty,
     })
+    // If this ever changes to onConflictDoUpdate, add WHERE manually_edited = 0
+    // to the conflict target so manual edits are not overwritten by API imports.
     .onConflictDoNothing({ target: [questions.source, questions.externalId] })
     .returning({ id: questions.id });
   return result.length > 0 ? "inserted" : "duplicate";

@@ -2,6 +2,7 @@ import { and, desc, eq, gt } from "drizzle-orm";
 import { questions } from "@/db/schema";
 import { Ico } from "@/components/Icons";
 import { QuestionActions } from "@/components/QuestionActionButtons";
+import { QuestionEditButton } from "@/components/QuestionEditButton";
 import { getDb } from "@/lib/db";
 
 type QuestionRow = typeof questions.$inferSelect;
@@ -71,12 +72,18 @@ export default async function AdminFlaggedPage() {
                 <div className="q-meta">
                   {r.flagCount} flag{r.flagCount === 1 ? "" : "s"} · #{r.id} ·{" "}
                   {r.category}
+                  {r.manuallyEdited && (
+                    <span className="chip chip--yellow" style={{ marginLeft: 6 }}>Edited</span>
+                  )}
                 </div>
               </div>
-              <QuestionActions
-                questionId={r.id}
-                actions={["move-to-pending", "dismiss"]}
-              />
+              <div className="admin-actions">
+                <QuestionActions
+                  questionId={r.id}
+                  actions={["move-to-pending", "dismiss"]}
+                />
+                <QuestionEditButton question={r} />
+              </div>
             </div>
           </div>
         ))

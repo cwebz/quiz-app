@@ -1,6 +1,7 @@
-import { sql } from "drizzle-orm";
+import { eq, like, or } from "drizzle-orm";
 import { questions } from "@/db/schema";
 import { Ico } from "@/components/Icons";
+import { QuestionEditButton } from "@/components/QuestionEditButton";
 import { getDb } from "@/lib/db";
 
 type QuestionRow = typeof questions.$inferSelect;
@@ -9,14 +10,14 @@ async function search(q: string): Promise<QuestionRow[]> {
   if (!q.trim()) return [];
   const db = await getDb();
   const numericId = /^\d+$/.test(q.trim()) ? Number.parseInt(q.trim(), 10) : null;
-  const like = `%${q.trim()}%`;
+  const pattern = `%${q.trim()}%`;
   return await db
     .select()
     .from(questions)
     .where(
       numericId !== null
-        ? sql`${questions.id} = ${numericId} OR ${questions.text} LIKE ${like}`
-        : sql`${questions.text} LIKE ${like}`,
+        ? or(eq(questions.id, numericId), like(questions.text, pattern))
+        : like(questions.text, pattern),
     )
     .limit(50);
 }
@@ -91,7 +92,12 @@ export default async function AdminSearchPage({
                     </div>
                   </td>
                   <td>
-                    <StatusChip status={r.status} />
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                      <StatusChip status={r.status} />
+                      {r.manuallyEdited && (
+                        <span className="chip chip--yellow">Edited</span>
+                      )}
+                    </div>
                   </td>
                   <td
                     style={{
@@ -103,10 +109,7 @@ export default async function AdminSearchPage({
                     {r.category}
                   </td>
                   <td>
-                    {/* TODO Phase 5: question detail/edit modal */}
-                    <button type="button" className="admin-btn ghost">
-                      Open
-                    </button>
+                    <QuestionEditButton question={r} />
                   </td>
                 </tr>
               ))}

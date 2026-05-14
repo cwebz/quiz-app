@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { questions } from "@/db/schema";
 import { QuestionActions } from "@/components/QuestionActionButtons";
+import { QuestionEditButton } from "@/components/QuestionEditButton";
 import { getDb } from "@/lib/db";
 
 type QuestionRow = typeof questions.$inferSelect;
@@ -76,6 +77,9 @@ export default async function AdminPendingPage() {
                     </div>
                     <div className="q-meta">
                       #{r.id} · {r.difficulty}
+                      {r.manuallyEdited && (
+                        <span className="chip chip--yellow" style={{ marginLeft: 6 }}>Edited</span>
+                      )}
                     </div>
                   </td>
                   <td>
@@ -93,10 +97,13 @@ export default async function AdminPendingPage() {
                     {r.source}
                   </td>
                   <td>
-                    <QuestionActions
-                      questionId={r.id}
-                      actions={["approve", "reject"]}
-                    />
+                    <div className="admin-actions">
+                      <QuestionActions
+                        questionId={r.id}
+                        actions={["approve", "reject"]}
+                      />
+                      <QuestionEditButton question={r} />
+                    </div>
                   </td>
                 </tr>
               ))}

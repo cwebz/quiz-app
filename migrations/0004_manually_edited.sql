@@ -1,0 +1,1 @@
+ALTER TABLE questions ADD COLUMN manually_edited INTEGER NOT NULL DEFAULT 0;

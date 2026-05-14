@@ -21,6 +21,28 @@ type TriviaApiResponse = Array<{
   incorrectAnswers: string[];
 }>;
 
+export async function fetchTriviaApiById(
+  externalId: string,
+): Promise<RawQuestion | null> {
+  const url = `https://the-trivia-api.com/v2/questions?ids=${externalId}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`the-trivia-api returned ${res.status} ${res.statusText}`);
+  }
+  const data = (await res.json()) as TriviaApiResponse;
+  if (!data.length) return null;
+  const q = data[0];
+  return {
+    externalId: q.id,
+    source: "the-trivia-api" as const,
+    text: q.question.text,
+    correctAnswer: q.correctAnswer,
+    incorrectAnswers: q.incorrectAnswers,
+    category: q.category,
+    difficulty: q.difficulty,
+  };
+}
+
 export async function fetchTriviaApi(limit: number): Promise<RawQuestion[]> {
   const url = `https://the-trivia-api.com/v2/questions?limit=${limit}`;
   const res = await fetch(url);
