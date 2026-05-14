@@ -6,7 +6,7 @@ import { Ico } from "@/components/Icons";
 import { Mascot } from "@/components/Mascot";
 import { dailyQuizzes } from "@/db/schema";
 import { getDb } from "@/lib/db";
-import { findExistingAttempt } from "@/lib/quiz/play";
+import { findExistingAttempt, type QuizResults } from "@/lib/quiz/play";
 import { getUtcDateString } from "@/lib/quiz/select";
 
 function fmtDate(d: Date): string {
@@ -22,6 +22,7 @@ async function loadHomeState() {
   const session = await auth();
   const userId = session?.userId ?? null;
   const today = getUtcDateString();
+  const yesterday = getUtcDateString(new Date(Date.now() - 86_400_000));
 
   const db = await getDb();
   const [quiz] = await db
@@ -40,11 +41,28 @@ async function loadHomeState() {
     });
   }
 
-  return { today, hasQuiz: !!quiz, alreadyPlayed };
+  let yesterdayResult: QuizResults | null = null;
+  if (userId !== null && !alreadyPlayed) {
+    const [yQuiz] = await db
+      .select()
+      .from(dailyQuizzes)
+      .where(eq(dailyQuizzes.quizDate, yesterday))
+      .limit(1);
+    if (yQuiz) {
+      yesterdayResult = await findExistingAttempt({
+        db,
+        dailyQuizId: yQuiz.id,
+        userId,
+        guestId: null,
+      });
+    }
+  }
+
+  return { today, hasQuiz: !!quiz, alreadyPlayed, yesterdayResult };
 }
 
 export default async function Home() {
-  const { hasQuiz, alreadyPlayed } = await loadHomeState();
+  const { hasQuiz, alreadyPlayed, yesterdayResult } = await loadHomeState();
   const today = new Date();
 
   return (
@@ -74,6 +92,8 @@ export default async function Home() {
         else who plays today.
       </p>
 
+      {yesterdayResult && <YesterdayBadge result={yesterdayResult} />}
+
       {!hasQuiz ? (
         <p
           style={{
@@ -101,6 +121,19 @@ export default async function Home() {
           <Ico.ArrowRight style={{ width: 22, height: 22 }} />
         </Link>
       )}
+    </div>
+  );
+}
+
+function YesterdayBadge({ result }: { result: QuizResults }) {
+  const top = Math.max(1, 100 - result.percentile);
+  const label =
+    result.percentile >= 50
+      ? `Yesterday · Top ${top}%`
+      : `Yesterday · you beat ${result.percentile}% of players`;
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <span className="chip chip--ghost">{label}</span>
     </div>
   );
 }
