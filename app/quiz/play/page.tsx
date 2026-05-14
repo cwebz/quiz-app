@@ -563,6 +563,13 @@ function QuizScreen({
     deadline ? Math.max(0, deadline - Date.now()) : 0,
   );
 
+  useEffect(() => {
+    document.documentElement.dataset.quizMode = "1";
+    return () => {
+      delete document.documentElement.dataset.quizMode;
+    };
+  }, []);
+
   // Snap remaining to the new deadline synchronously so the first paint of a
   // new question shows a full arc — otherwise the stale 0 from the prior
   // question causes the CSS transition to slowly refill the circle.
@@ -649,7 +656,7 @@ function QuizScreen({
           </span>
         </div>
         <div className="question-text">{question.text}</div>
-        <div className="answers" style={{ marginTop: 28 }}>
+        <div className="answers">
           {question.options.map((opt, i) => {
             const cls = ["answer"];
             const isSelected = selected === opt;
