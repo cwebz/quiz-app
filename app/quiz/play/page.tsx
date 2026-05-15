@@ -780,6 +780,57 @@ function ReportQuestionButton({ token }: { token: string }) {
   );
 }
 
+function ReportRecapButton({
+  attemptId,
+  questionId,
+}: {
+  attemptId: number;
+  questionId: number;
+}) {
+  const [reported, setReported] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = async () => {
+    if (loading || reported) return;
+    setLoading(true);
+    try {
+      const guestId =
+        typeof window !== "undefined"
+          ? localStorage.getItem(GUEST_ID_KEY)
+          : null;
+      const res = await fetch("/api/quiz/flag", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ attemptId, questionId, guestId }),
+      });
+      if (!res.ok) throw new Error(`flag API: ${res.status}`);
+      setReported(true);
+    } catch {
+      // Soft failure — let the user retry without making a scene.
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className="flag-link"
+      onClick={handleClick}
+      disabled={loading || reported}
+      style={{
+        marginLeft: 0,
+        marginTop: 4,
+        ...(reported ? { color: "var(--mint-dark)", cursor: "default" } : {}),
+      }}
+      aria-live="polite"
+    >
+      <Ico.Flag style={{ width: 12, height: 12 }} />
+      {reported ? "Thanks, we'll review" : loading ? "Reporting…" : "Report"}
+    </button>
+  );
+}
+
 
 function ResultsScreen({ results }: { results: QuizResults }) {
   const today = new Date();
@@ -983,6 +1034,10 @@ function ResultsScreen({ results }: { results: QuizResults }) {
                   )}{" "}
                   · {(q.timeTakenMs / 1000).toFixed(1)}s · {q.pointsEarned} pts
                 </div>
+                <ReportRecapButton
+                  attemptId={results.attemptId}
+                  questionId={q.questionId}
+                />
               </div>
               <div className={`recap-mark ${q.wasCorrect ? "ok" : "no"}`}>
                 {q.wasCorrect ? (
