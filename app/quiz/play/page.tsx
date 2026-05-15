@@ -565,6 +565,9 @@ function QuizScreen({
 
   useEffect(() => {
     document.documentElement.dataset.quizMode = "1";
+    // Mobile: home-page scroll position can carry over on nav, cutting off the
+    // first question. Slide to top when the quiz actually starts.
+    window.scrollTo({ top: 0, behavior: "smooth" });
     return () => {
       delete document.documentElement.dataset.quizMode;
     };
