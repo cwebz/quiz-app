@@ -1,9 +1,9 @@
 // Admin allowlist for the app.
 //
-// Single source of truth — referenced by proxy.ts (the request gate) and
-// the Topbar (so non-admins don't see a "Admin" nav link they'd just bounce
-// off of). Add an email here + redeploy to grant access; remove + redeploy
-// to revoke.
+// Single source of truth — referenced by the admin layout, each admin
+// route handler, and the Topbar (so non-admins don't see an "Admin" nav
+// link they'd just bounce off of). Add an email here + redeploy to grant
+// access; remove + redeploy to revoke.
 
 const ADMIN_EMAILS = new Set<string>([
   "cweber@divcom.com",

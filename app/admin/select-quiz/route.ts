@@ -1,9 +1,16 @@
 import { eq } from "drizzle-orm";
+import { auth } from "@/auth";
 import { dailyQuizzes } from "@/db/schema";
+import { isAdminEmail } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 import { getUtcDateString, selectDailyQuiz } from "@/lib/quiz/select";
 
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!isAdminEmail(session?.user?.email ?? null)) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const url = new URL(request.url);
   const date = url.searchParams.get("date") ?? getUtcDateString();
   const force = url.searchParams.get("force") === "true";

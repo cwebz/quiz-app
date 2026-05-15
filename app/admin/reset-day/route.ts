@@ -1,11 +1,16 @@
 import { eq, inArray } from "drizzle-orm";
+import { auth } from "@/auth";
 import { dailyQuizzes, questionResponses, quizAttempts } from "@/db/schema";
+import { isAdminEmail } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 import { getUtcDateString, selectDailyQuiz } from "@/lib/quiz/select";
 
-// Security: middleware.ts gates /admin/* to signed-in users only.
-// This route is console-only (no UI), consistent with select-quiz.
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!isAdminEmail(session?.user?.email ?? null)) {
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const url = new URL(request.url);
   const date = url.searchParams.get("date") ?? getUtcDateString();
 

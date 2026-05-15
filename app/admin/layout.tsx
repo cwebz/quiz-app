@@ -1,12 +1,16 @@
 import { eq, sql } from "drizzle-orm";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { AdminSidebar } from "@/components/AdminSidebar";
 import { questions } from "@/db/schema";
+import { isAdminEmail } from "@/lib/admin";
 import { getDb } from "@/lib/db";
 
-// Auth gating happens in proxy.ts (session-based primary, Basic Auth
-// fallback). Putting it here too caused proxy/layout disagreements when
-// the request was admitted via Basic Auth but had no session for the
-// layout to inspect. Keep proxy.ts as the single source of truth.
+// Auth gating: middleware.ts only verifies a session cookie is present
+// (it cannot import next-auth without forcing Node.js runtime, which
+// opennextjs-cloudflare doesn't support). The real isAdminEmail() check
+// runs here in the layout so it covers every admin page, plus per-route
+// in each /admin/*/route.ts handler for defense-in-depth.
 
 async function getPendingCount(): Promise<number> {
   const db = await getDb();
@@ -22,6 +26,10 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const session = await auth();
+  if (!isAdminEmail(session?.user?.email ?? null)) {
+    redirect("/");
+  }
   const pendingCount = await getPendingCount();
   return (
     <div className="admin">
