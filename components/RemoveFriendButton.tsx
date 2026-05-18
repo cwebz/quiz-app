@@ -45,6 +45,7 @@ export function RemoveFriendButton({
         className="admin-btn no"
         onClick={handleRemove}
         disabled={loading}
+        style={{ minHeight: 44 }}
       >
         {loading ? "…" : "Remove"}
       </button>

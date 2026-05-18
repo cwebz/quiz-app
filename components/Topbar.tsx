@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { userStats, users } from "@/db/schema";
 import { isAdminEmail } from "@/lib/admin";
 import { getDb } from "@/lib/db";
+import { AvatarDropdown } from "./AvatarDropdown";
 import { Ico } from "./Icons";
 import { MobileNavMenu } from "./MobileNavMenu";
 import { SignInButton } from "./SignInButton";
@@ -37,7 +38,8 @@ async function loadProfileStub(userId: number) {
 export async function Topbar() {
   const session = await auth();
   const userId = session?.userId;
-  const isAdmin = isAdminEmail(session?.user?.email ?? null);
+  const email = session?.user?.email ?? null;
+  const isAdmin = isAdminEmail(email);
   const showLeaderboard = userId !== undefined;
 
   return (
@@ -56,7 +58,7 @@ export async function Topbar() {
       <TopnavLinks showAdmin={isAdmin} showLeaderboard={showLeaderboard} />
       <div className="topright">
         {userId !== undefined ? (
-          <SignedInChip userId={userId} />
+          <SignedInChip userId={userId} email={email} />
         ) : (
           <SignInButton
             label="Sign in"
@@ -68,7 +70,7 @@ export async function Topbar() {
   );
 }
 
-async function SignedInChip({ userId }: { userId: number }) {
+async function SignedInChip({ userId, email }: { userId: number; email: string | null }) {
   const profile = await loadProfileStub(userId);
   return (
     <>
@@ -77,14 +79,11 @@ async function SignedInChip({ userId }: { userId: number }) {
           <Ico.Fire style={{ width: 14, height: 14 }} /> {profile.currentStreak}
         </span>
       )}
-      <Link
-        href="/profile"
-        className="avatar"
-        aria-label={`Open profile for ${profile.displayName}`}
-        style={{ textDecoration: "none" }}
-      >
-        {initials(profile.displayName)}
-      </Link>
+      <AvatarDropdown
+        initials={initials(profile.displayName)}
+        displayName={profile.displayName}
+        email={email}
+      />
     </>
   );
 }

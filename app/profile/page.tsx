@@ -1,11 +1,12 @@
 import { and, asc, desc, eq, gte, or } from "drizzle-orm";
 import Link from "next/link";
 import { auth } from "@/auth";
+import { type BadgeDef, BadgesCollapsible } from "@/components/BadgesCollapsible";
+import { CategoryBarsCollapsible } from "@/components/CategoryBarsCollapsible";
 import { Ico } from "@/components/Icons";
 import { InviteLinkBox } from "@/components/InviteLinkBox";
 import { RemoveFriendButton } from "@/components/RemoveFriendButton";
 import { SignInButton } from "@/components/SignInButton";
-import { SignOutButton } from "@/components/SignOutButton";
 import {
   categoryMastery,
   dailyQuizzes,
@@ -46,7 +47,7 @@ const CATEGORY_COLORS = [
   "var(--yellow)",
 ];
 const MASTERY_THRESHOLD = 100; // PRD §11 Master tier
-const CAL_DAYS = 28;
+const CAL_DAYS = 7;
 
 type ProfileData = {
   displayName: string;
@@ -235,9 +236,8 @@ export default async function ProfilePage() {
       <div className="card" style={{ maxWidth: 520, marginTop: 40 }}>
         <h2>Profile not found</h2>
         <p style={{ color: "var(--ink-soft)", fontSize: 14 }}>
-          We couldn&apos;t find your account row. Try signing out and back in.
+          We couldn&apos;t find your account row. Try signing out and back in via the menu.
         </p>
-        <SignOutButton style={{ marginTop: 16 }} />
       </div>
     );
   }
@@ -254,8 +254,10 @@ export default async function ProfilePage() {
         <div>
           <div className="profile-name">{profile.displayName}</div>
           <div className="profile-handle">
-            {emailHandle(profile.email, profile.displayName)} · joined{" "}
-            {formatJoined(profile.createdAt)}
+            {emailHandle(profile.email, profile.displayName)}
+          </div>
+          <div style={{ color: "var(--ink-mute)", fontSize: 12, marginTop: 2 }}>
+            joined {formatJoined(profile.createdAt)}
           </div>
           <div className="profile-pills">
             {profile.currentStreak > 0 && (
@@ -276,46 +278,30 @@ export default async function ProfilePage() {
             )}
           </div>
         </div>
-        <div className="stats-signout">
-          <SignOutButton
-            label="Sign out"
-            style={{ padding: "10px 16px", fontSize: 13 }}
-          />
-        </div>
       </div>
 
       <div className="stats-grid">
         <div className="stat-card purple">
-          <div className="num">{profile.currentStreak}</div>
+          <div className="num">{profile.currentStreak.toLocaleString()}</div>
           <div className="lbl">Current streak</div>
         </div>
         <div className="stat-card yellow">
-          <div className="num">{profile.longestStreak}</div>
+          <div className="num">{profile.longestStreak.toLocaleString()}</div>
           <div className="lbl">Longest streak</div>
-        </div>
-        <div className="stat-card mint">
-          <div className="num">{profile.totalQuizzes}</div>
-          <div className="lbl">Quizzes played</div>
-        </div>
-        <div className="stat-card pink">
-          <div className="num">{profile.totalCorrect}</div>
-          <div className="lbl">Correct answers</div>
         </div>
       </div>
 
       <div className="card">
-        <div className="row between">
+        <div className="row between" style={{ flexWrap: "wrap", gap: "10px 12px", marginBottom: 14 }}>
           <div>
-            <div className="section-h" style={{ marginBottom: 4 }}>
-              Last 4 weeks
-            </div>
-            <div className="section-sub">
+            <div className="section-h">Last 7 days</div>
+            <div style={{ color: "var(--ink-soft)", fontSize: 14 }}>
               {profile.totalQuizzes === 0
                 ? "Play your first quiz to start filling this in."
                 : "Each square is one day. Darker green = better score."}
             </div>
           </div>
-          <div className="row" style={{ gap: 10 }}>
+          <div className="row" style={{ gap: 8, flexShrink: 0 }}>
             <span className="chip chip--mint">Played</span>
             <span className="chip chip--coral">Missed</span>
           </div>
@@ -348,57 +334,22 @@ export default async function ProfilePage() {
       </div>
 
       <div className="card">
-        <div className="section-h" style={{ marginBottom: 4 }}>
-          Category mastery
-        </div>
+        <div className="section-h" style={{}}>Category mastery</div>
         <div className="section-sub">
-          Lifetime correct answers per category. Hit {MASTERY_THRESHOLD} to earn
-          Master tier.
+          Lifetime correct answers per category. Hit {MASTERY_THRESHOLD} to earn Master tier.
         </div>
-        {profile.categories.length === 0 ? (
-          <p style={{ color: "var(--ink-soft)", fontSize: 14 }}>
-            No category data yet. Finish a few quizzes to start populating
-            this.
-          </p>
-        ) : (
-          <div className="category-bars">
-            {profile.categories.map((c) => {
-              const pct = Math.min(
-                100,
-                (c.correct / MASTERY_THRESHOLD) * 100,
-              );
-              const accuracy =
-                c.seen > 0 ? Math.round((c.correct / c.seen) * 100) : 0;
-              return (
-                <div className="cat-row" key={c.name}>
-                  <div className="cat-name">{prettyCategory(c.name)}</div>
-                  <div className="cat-track">
-                    <div
-                      className="cat-fill"
-                      style={{ width: `${pct}%`, background: c.color }}
-                    />
-                  </div>
-                  <div className="cat-count">
-                    {c.correct}/{MASTERY_THRESHOLD} · {accuracy}%
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <CategoryBarsCollapsible categories={profile.categories} />
       </div>
 
       <div className="card">
-        <div className="section-h" style={{ marginBottom: 4 }}>
-          Badges
-        </div>
-        <BadgesGrid profile={profile} />
+        <div className="section-h" style={{}}>Badges</div>
+        <BadgesCollapsible badges={buildBadges(profile)} />
       </div>
 
       <div className="card">
         <div className="row between">
           <div>
-            <div className="section-h" style={{ marginBottom: 4 }}>
+            <div className="section-h" style={{}}>
               Friends
             </div>
             <div className="section-sub">
@@ -413,6 +364,8 @@ export default async function ProfilePage() {
               color: "var(--primary)",
               fontFamily: "var(--font-display)",
               fontWeight: 700,
+              padding: "12px 0 12px 16px",
+              display: "inline-block",
             }}
           >
             Leaderboard →
@@ -493,7 +446,7 @@ export default async function ProfilePage() {
   );
 }
 
-function BadgesGrid({ profile }: { profile: ProfileData }) {
+function buildBadges(profile: ProfileData): BadgeDef[] {
   const best = Math.max(profile.currentStreak, profile.longestStreak);
   const firstSteps = profile.totalQuizzes >= 1;
   const perfect = profile.perfectScores >= 1;
@@ -501,119 +454,23 @@ function BadgesGrid({ profile }: { profile: ProfileData }) {
   const weekOne = best >= 7;
   const monthStrong = best >= 30;
   const centurion = best >= 100;
-  const masterCategory = profile.categories.find(
-    (c) => c.correct >= MASTERY_THRESHOLD,
-  );
+  const masterCategory = profile.categories.find((c) => c.correct >= MASTERY_THRESHOLD);
 
-  return (
-    <div className="badges-grid">
-      <BadgeTile
-        unlocked={firstSteps}
-        tier="gold"
-        icon={<Ico.Trophy style={{ width: 30, height: 30 }} />}
-        name="First Steps"
-        desc="Played your first quiz"
-      />
-      <BadgeTile
-        unlocked={perfect}
-        tier="gold"
-        icon={<Ico.Check style={{ width: 28, height: 28 }} />}
-        name="Perfect"
-        desc={perfect ? "Scored 5/5" : "Score 5/5 on a quiz"}
-      />
-      <BadgeTile
-        unlocked={perfectionist}
-        tier="gold"
-        icon={<Ico.Brain style={{ width: 28, height: 28 }} />}
-        name="Perfectionist"
-        desc={
-          perfectionist
-            ? "10 perfect scores"
-            : `${profile.perfectScores}/10 perfect scores`
-        }
-      />
-      <BadgeTile
-        unlocked={profile.hasSpeedDemon}
-        tier="gold"
-        icon={<Ico.Bolt style={{ width: 28, height: 28 }} />}
-        name="Speed Demon"
-        desc="5/5 with 900+ points"
-      />
-      <BadgeTile
-        unlocked={profile.hasLightning}
-        tier="master"
-        icon={<Ico.Bolt style={{ width: 28, height: 28 }} />}
-        name="Lightning"
-        desc="5/5 with 950+ points"
-      />
-      <BadgeTile
-        unlocked={profile.comebackEarned}
-        tier="gold"
-        icon={<Ico.Fire style={{ width: 28, height: 28 }} />}
-        name="Comeback"
-        desc="Freeze saved a streak"
-      />
-      <BadgeTile
-        unlocked={weekOne}
-        tier="silver"
-        icon={<Ico.Calendar style={{ width: 28, height: 28 }} />}
-        name="Week One"
-        desc={weekOne ? "7-day streak" : `${Math.max(0, 7 - best)} days to go`}
-      />
-      <BadgeTile
-        unlocked={monthStrong}
-        tier="gold"
-        icon={<Ico.Calendar style={{ width: 28, height: 28 }} />}
-        name="Month Strong"
-        desc={
-          monthStrong
-            ? "30-day streak"
-            : `${Math.max(0, 30 - best)} days to go`
-        }
-      />
-      <BadgeTile
-        unlocked={centurion}
-        tier="master"
-        icon={<Ico.Fire style={{ width: 28, height: 28 }} />}
-        name="Centurion"
-        desc={
-          centurion
-            ? "100-day streak"
-            : `${Math.max(0, 100 - best)} days to go`
-        }
-      />
-      {masterCategory && (
-        <BadgeTile
-          unlocked
-          tier="master"
-          icon={<Ico.Brain style={{ width: 28, height: 28 }} />}
-          name={`${prettyCategory(masterCategory.name)} Master`}
-          desc={`${masterCategory.correct} correct`}
-        />
-      )}
-    </div>
-  );
-}
+  const badges: BadgeDef[] = [
+    { unlocked: firstSteps, tier: "gold", iconKey: "Trophy", name: "First Steps", desc: "Played your first quiz" },
+    { unlocked: perfect, tier: "gold", iconKey: "Check", name: "Perfect", desc: perfect ? "Scored 5/5" : "Score 5/5 on a quiz" },
+    { unlocked: perfectionist, tier: "gold", iconKey: "Brain", name: "Perfectionist", desc: perfectionist ? "10 perfect scores" : `${profile.perfectScores}/10 perfect scores` },
+    { unlocked: profile.hasSpeedDemon, tier: "gold", iconKey: "Bolt", name: "Speed Demon", desc: "5/5 with 900+ points" },
+    { unlocked: profile.hasLightning, tier: "master", iconKey: "Bolt", name: "Lightning", desc: "5/5 with 950+ points" },
+    { unlocked: profile.comebackEarned, tier: "gold", iconKey: "Fire", name: "Comeback", desc: "Freeze saved a streak" },
+    { unlocked: weekOne, tier: "silver", iconKey: "Calendar", name: "Week One", desc: weekOne ? "7-day streak" : `${Math.max(0, 7 - best)} days to go` },
+    { unlocked: monthStrong, tier: "gold", iconKey: "Calendar", name: "Month Strong", desc: monthStrong ? "30-day streak" : `${Math.max(0, 30 - best)} days to go` },
+    { unlocked: centurion, tier: "master", iconKey: "Fire", name: "Centurion", desc: centurion ? "100-day streak" : `${Math.max(0, 100 - best)} days to go` },
+  ];
 
-function BadgeTile({
-  unlocked,
-  tier,
-  icon,
-  name,
-  desc,
-}: {
-  unlocked: boolean;
-  tier: "gold" | "silver" | "bronze" | "master";
-  icon: React.ReactNode;
-  name: string;
-  desc: string;
-}) {
-  const tierClass = unlocked ? tier : "locked";
-  return (
-    <div className={`badge ${tierClass}`}>
-      <div className="badge-medal">{icon}</div>
-      <div className="badge-name">{name}</div>
-      <div className="badge-desc">{desc}</div>
-    </div>
-  );
+  if (masterCategory) {
+    badges.push({ unlocked: true, tier: "master", iconKey: "Brain", name: `${prettyCategory(masterCategory.name)} Master`, desc: `${masterCategory.correct} correct` });
+  }
+
+  return badges;
 }
