@@ -1,17 +1,41 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, or } from "drizzle-orm";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { Ico } from "@/components/Icons";
+import { InviteLinkBox } from "@/components/InviteLinkBox";
+import { RemoveFriendButton } from "@/components/RemoveFriendButton";
 import { SignInButton } from "@/components/SignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
 import {
   categoryMastery,
   dailyQuizzes,
+  friendships,
   quizAttempts,
   users,
   userStats,
 } from "@/db/schema";
 import { getDb } from "@/lib/db";
+
+async function loadFriends(
+  userId: number,
+): Promise<Array<{ id: number; displayName: string }>> {
+  const db = await getDb();
+  const rows = await db
+    .select({ id: users.id, displayName: users.displayName })
+    .from(friendships)
+    .innerJoin(
+      users,
+      or(
+        and(eq(friendships.userId1, userId), eq(users.id, friendships.userId2)),
+        and(eq(friendships.userId2, userId), eq(users.id, friendships.userId1)),
+      ),
+    )
+    .orderBy(asc(users.displayName));
+  return rows.map((r) => ({
+    id: r.id,
+    displayName: r.displayName ?? "Player",
+  }));
+}
 
 const CATEGORY_COLORS = [
   "var(--blue)",
@@ -202,7 +226,10 @@ export default async function ProfilePage() {
     );
   }
 
-  const profile = await loadProfile(session.userId);
+  const [profile, friends] = await Promise.all([
+    loadProfile(session.userId),
+    loadFriends(session.userId),
+  ]);
   if (!profile) {
     return (
       <div className="card" style={{ maxWidth: 520, marginTop: 40 }}>
@@ -366,6 +393,82 @@ export default async function ProfilePage() {
           Badges
         </div>
         <BadgesGrid profile={profile} />
+      </div>
+
+      <div className="card">
+        <div className="row between">
+          <div>
+            <div className="section-h" style={{ marginBottom: 4 }}>
+              Friends
+            </div>
+            <div className="section-sub">
+              Share your link to invite friends. Compare scores on the daily
+              leaderboard.
+            </div>
+          </div>
+          <Link
+            href="/leaderboard"
+            style={{
+              fontSize: 13,
+              color: "var(--primary)",
+              fontFamily: "var(--font-display)",
+              fontWeight: 700,
+            }}
+          >
+            Leaderboard →
+          </Link>
+        </div>
+        <InviteLinkBox />
+        {friends.length > 0 && (
+          <div style={{ marginTop: 18 }}>
+            <div
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 700,
+                fontSize: 13,
+                color: "var(--ink-soft)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                marginBottom: 10,
+              }}
+            >
+              Your friends ({friends.length})
+            </div>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: 8 }}
+            >
+              {friends.map((f) => (
+                <div
+                  key={f.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    background: "var(--bg)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontFamily: "var(--font-body)",
+                      fontWeight: 700,
+                      fontSize: 15,
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {f.displayName}
+                  </div>
+                  <RemoveFriendButton
+                    friendId={f.id}
+                    friendName={f.displayName}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <p

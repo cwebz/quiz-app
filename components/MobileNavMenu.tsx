@@ -5,13 +5,20 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Ico } from "./Icons";
 
-export function MobileNavMenu({ showAdmin }: { showAdmin: boolean }) {
+export function MobileNavMenu({
+  showAdmin,
+  showLeaderboard,
+}: {
+  showAdmin: boolean;
+  showLeaderboard: boolean;
+}) {
   const pathname = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const isToday = pathname === "/" || pathname.startsWith("/quiz");
   const isProfile = pathname.startsWith("/profile");
+  const isLeaderboard = pathname.startsWith("/leaderboard");
   const isAdminPath = pathname.startsWith("/admin");
 
   useEffect(() => {
@@ -58,6 +65,16 @@ export function MobileNavMenu({ showAdmin }: { showAdmin: boolean }) {
           >
             Today
           </Link>
+          {showLeaderboard && (
+            <Link
+              href="/leaderboard"
+              role="menuitem"
+              className={isLeaderboard ? "active" : ""}
+              onClick={close}
+            >
+              Friends
+            </Link>
+          )}
           <Link
             href="/profile"
             role="menuitem"

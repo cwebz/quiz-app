@@ -4,6 +4,7 @@ import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfettiBurst } from "@/components/ConfettiBurst";
+import { FriendsLeaderboard } from "@/components/FriendsLeaderboard";
 import { Ico } from "@/components/Icons";
 import { ScoreRing } from "@/components/ScoreRing";
 import type {
@@ -965,6 +966,28 @@ function ResultsScreen({ results }: { results: QuizResults }) {
         comebackJustEarned={results.comebackJustEarned}
         freezeApplied={results.freezeApplied}
       />
+
+      {results.friendsToday !== null && results.friendsToday.length > 0 && (
+        <div className="card">
+          <div className="row between">
+            <h3>Friends</h3>
+            <Link
+              href="/leaderboard"
+              style={{ fontSize: 13, color: "var(--primary)" }}
+            >
+              Full leaderboard →
+            </Link>
+          </div>
+          <FriendsLeaderboard
+            entries={results.friendsToday.map((f) => ({
+              displayName: f.displayName,
+              finalScore: f.finalScore,
+              totalTimeMs: null,
+              isCurrentUser: false,
+            }))}
+          />
+        </div>
+      )}
 
       <div className="card">
         <div className="row between">

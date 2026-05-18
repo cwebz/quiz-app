@@ -1,11 +1,13 @@
-import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import {
   categoryMastery,
   dailyQuizzes,
+  friendships,
   questionResponses,
   questions,
   quizAttempts,
+  users,
   userStats,
 } from "../../db/schema";
 import { getQuestionStats, recordAnswer } from "./question-stats";
@@ -50,6 +52,7 @@ export type QuestionFeedback = {
 
 export type QuizResults = {
   attemptId: number;
+  userId: number | null;
   correctCount: number;
   finalScore: number;
   totalTimeMs: number;
@@ -59,6 +62,12 @@ export type QuizResults = {
   totalPlayersToday: number;
   /** Score distribution for today: index = correct count (0–5), value = player count. */
   scoreDistribution: number[];
+  /** Null for guests or users with no friends who played today. */
+  friendsToday: Array<{
+    displayName: string;
+    finalScore: number;
+    rank: number;
+  }> | null;
   /** Present only for authenticated users. */
   userStreak?: {
     current: number;
@@ -594,10 +603,13 @@ async function loadResults(
   const byId = new Map(rows.map((r) => [r.id, r]));
   const totalTime = answered.reduce((s, a) => s + a.timeTakenMs, 0);
 
-  const [{ percentile, total: totalPlayersToday }, scoreDistribution] =
+  const [{ percentile, total: totalPlayersToday }, scoreDistribution, friendsToday] =
     await Promise.all([
       computeLivePercentile(db, dailyQuizId, finalScoreValue),
       computeScoreDistribution(db, dailyQuizId),
+      userId !== null
+        ? computeFriendsToday(db, dailyQuizId, userId)
+        : Promise.resolve(null),
     ]);
 
   let userStreak:
@@ -631,12 +643,14 @@ async function loadResults(
 
   return {
     attemptId,
+    userId,
     correctCount: correctCount(answered),
     finalScore: finalScore(answered),
     totalTimeMs: totalTime,
     percentile,
     totalPlayersToday,
     scoreDistribution,
+    friendsToday,
     userStreak,
     freezeApplied: freezeData.freezeApplied || undefined,
     comebackJustEarned: freezeData.comebackJustEarned || undefined,
@@ -653,6 +667,53 @@ async function loadResults(
       };
     }),
   };
+}
+
+async function computeFriendsToday(
+  db: DB,
+  dailyQuizId: number,
+  currentUserId: number,
+): Promise<Array<{ displayName: string; finalScore: number; rank: number }> | null> {
+  const friendRows = await db
+    .select({ userId1: friendships.userId1, userId2: friendships.userId2 })
+    .from(friendships)
+    .where(
+      or(
+        eq(friendships.userId1, currentUserId),
+        eq(friendships.userId2, currentUserId),
+      ),
+    );
+
+  if (friendRows.length === 0) return null;
+
+  const friendIds = friendRows.map((r) =>
+    r.userId1 === currentUserId ? r.userId2 : r.userId1,
+  );
+  const allIds = [currentUserId, ...friendIds];
+
+  const rows = await db
+    .select({
+      displayName: users.displayName,
+      finalScore: quizAttempts.finalScore,
+      totalTimeMs: quizAttempts.totalTimeMs,
+    })
+    .from(quizAttempts)
+    .innerJoin(users, eq(users.id, quizAttempts.userId))
+    .where(
+      and(
+        eq(quizAttempts.dailyQuizId, dailyQuizId),
+        inArray(quizAttempts.userId, allIds),
+      ),
+    )
+    .orderBy(desc(quizAttempts.finalScore), asc(quizAttempts.totalTimeMs));
+
+  if (rows.length === 0) return null;
+
+  return rows.map((r, i) => ({
+    displayName: r.displayName ?? "Player",
+    finalScore: r.finalScore,
+    rank: i + 1,
+  }));
 }
 
 async function computeScoreDistribution(

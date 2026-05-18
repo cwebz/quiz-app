@@ -38,10 +38,11 @@ export async function Topbar() {
   const session = await auth();
   const userId = session?.userId;
   const isAdmin = isAdminEmail(session?.user?.email ?? null);
+  const showLeaderboard = userId !== undefined;
 
   return (
     <header className="topbar">
-      <MobileNavMenu showAdmin={isAdmin} />
+      <MobileNavMenu showAdmin={isAdmin} showLeaderboard={showLeaderboard} />
       <Link
         href="/"
         className="brand"
@@ -52,7 +53,7 @@ export async function Topbar() {
         </span>
         Smarter
       </Link>
-      <TopnavLinks showAdmin={isAdmin} />
+      <TopnavLinks showAdmin={isAdmin} showLeaderboard={showLeaderboard} />
       <div className="topright">
         {userId !== undefined ? (
           <SignedInChip userId={userId} />
