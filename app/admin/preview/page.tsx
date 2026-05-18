@@ -3,6 +3,7 @@ import { dailyQuizzes, questions } from "@/db/schema";
 import { getDb } from "@/lib/db";
 import { getUtcDateString } from "@/lib/quiz/select";
 import { SelectQuizButton } from "./SelectQuizButton";
+import { SwapButton } from "./SwapButton";
 
 type QuestionRow = typeof questions.$inferSelect;
 
@@ -95,6 +96,7 @@ export default async function AdminPreviewPage() {
                 index={i}
                 question={q}
                 first={i === 0}
+                date={tomorrowQuiz.date}
               />
             ))}
           </div>
@@ -136,6 +138,7 @@ export default async function AdminPreviewPage() {
                 index={i}
                 question={q}
                 first={i === 0}
+                date={todayQuiz.date}
               />
             ))}
           </div>
@@ -160,10 +163,12 @@ function QuestionRowDisplay({
   index,
   question,
   first,
+  date,
 }: {
   index: number;
   question: QuestionRow;
   first: boolean;
+  date: string;
 }) {
   return (
     <div
@@ -201,6 +206,9 @@ function QuestionRowDisplay({
           </span>
           · {question.difficulty} · #{question.id}
         </div>
+        {date > getUtcDateString() && (
+          <SwapButton date={date} outId={question.id} outText={question.text} />
+        )}
       </div>
     </div>
   );
