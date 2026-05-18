@@ -15,6 +15,7 @@ type DashboardData = {
   todayAvgScore: number | null;
   todayDistribution: number[];
   hasTodayQuiz: boolean;
+  totalUsers: number;
   attemptSpark: number[];
   avgScoreSpark: number[];
   signupSpark: number[];
@@ -31,6 +32,7 @@ async function loadDashboard(): Promise<DashboardData> {
     [rejectedRow],
     [flaggedRow],
     [todayQuiz],
+    [usersRow],
   ] = await Promise.all([
     db.select({ count: sql<number>`count(*)` }).from(questions),
     db
@@ -54,6 +56,7 @@ async function loadDashboard(): Promise<DashboardData> {
       .from(dailyQuizzes)
       .where(eq(dailyQuizzes.quizDate, today))
       .limit(1),
+    db.select({ count: sql<number>`count(*)` }).from(users),
   ]);
 
   let todayAttempts = 0;
@@ -125,6 +128,7 @@ async function loadDashboard(): Promise<DashboardData> {
     todayAvgScore,
     todayDistribution: distribution,
     hasTodayQuiz: !!todayQuiz,
+    totalUsers: usersRow?.count ?? 0,
     attemptSpark,
     avgScoreSpark,
     signupSpark,
@@ -205,7 +209,14 @@ export default async function AdminDashboardPage() {
                 : "nothing waiting"}
             </span>
           </div>
-          <Sparkline values={data.signupSpark} color="var(--pink)" />
+        </div>
+        <div className="kpi">
+          <div className="lbl">Registered users</div>
+          <div className="num">{data.totalUsers.toLocaleString()}</div>
+          <div>
+            <span className="delta flat">lifetime</span>
+          </div>
+          <Sparkline values={data.signupSpark} color="var(--primary)" />
         </div>
         <div className="kpi">
           <div className="lbl">Approved pool</div>
