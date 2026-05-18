@@ -983,7 +983,7 @@ function ResultsScreen({ results }: { results: QuizResults }) {
               displayName: f.displayName,
               finalScore: f.finalScore,
               totalTimeMs: null,
-              isCurrentUser: false,
+              isCurrentUser: f.userId === results.userId,
             }))}
           />
         </div>

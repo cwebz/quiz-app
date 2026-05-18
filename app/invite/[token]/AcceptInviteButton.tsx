@@ -30,8 +30,8 @@ export function AcceptInviteButton({
         return;
       }
       router.push("/leaderboard");
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }

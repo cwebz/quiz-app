@@ -64,6 +64,7 @@ export type QuizResults = {
   scoreDistribution: number[];
   /** Null for guests or users with no friends who played today. */
   friendsToday: Array<{
+    userId: number;
     displayName: string;
     finalScore: number;
     rank: number;
@@ -673,7 +674,7 @@ async function computeFriendsToday(
   db: DB,
   dailyQuizId: number,
   currentUserId: number,
-): Promise<Array<{ displayName: string; finalScore: number; rank: number }> | null> {
+): Promise<Array<{ userId: number; displayName: string; finalScore: number; rank: number }> | null> {
   const friendRows = await db
     .select({ userId1: friendships.userId1, userId2: friendships.userId2 })
     .from(friendships)
@@ -693,6 +694,7 @@ async function computeFriendsToday(
 
   const rows = await db
     .select({
+      userId: quizAttempts.userId,
       displayName: users.displayName,
       finalScore: quizAttempts.finalScore,
       totalTimeMs: quizAttempts.totalTimeMs,
@@ -710,6 +712,7 @@ async function computeFriendsToday(
   if (rows.length === 0) return null;
 
   return rows.map((r, i) => ({
+    userId: r.userId!,
     displayName: r.displayName ?? "Player",
     finalScore: r.finalScore,
     rank: i + 1,

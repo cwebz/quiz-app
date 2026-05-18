@@ -52,8 +52,10 @@ export function InviteLinkBox() {
     setResetting(true);
     try {
       const res = await fetch("/api/friends/invite", { method: "DELETE" });
-      const data = (await res.json()) as InviteResponse;
-      if ("url" in data) setUrl(data.url);
+      if (res.ok) {
+        const data = (await res.json()) as InviteResponse;
+        if ("url" in data) setUrl(data.url);
+      }
     } finally {
       setResetting(false);
     }

@@ -48,8 +48,12 @@ export async function DELETE(request: Request) {
   const uid1 = Math.min(currentUserId, friendId);
   const uid2 = Math.max(currentUserId, friendId);
   const db = await getDb();
-  await db
+  const deleted = await db
     .delete(friendships)
-    .where(and(eq(friendships.userId1, uid1), eq(friendships.userId2, uid2)));
+    .where(and(eq(friendships.userId1, uid1), eq(friendships.userId2, uid2)))
+    .returning({ id: friendships.id });
+  if (deleted.length === 0) {
+    return Response.json({ error: "friendship not found" }, { status: 404 });
+  }
   return Response.json({ ok: true });
 }
