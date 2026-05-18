@@ -13,6 +13,21 @@ type SearchResult = {
 
 type Mode = "idle" | "searching" | "confirming" | "submitting";
 
+const CATEGORIES = [
+  "Music",
+  "Sport & Leisure",
+  "Film & TV",
+  "Arts & Literature",
+  "History",
+  "Society & Culture",
+  "Science",
+  "Geography",
+  "Food & Drink",
+  "General Knowledge",
+] as const;
+
+const DIFFICULTIES = ["easy", "medium", "hard"] as const;
+
 export function SwapButton({
   date,
   outId,
@@ -25,6 +40,8 @@ export function SwapButton({
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("idle");
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("");
+  const [difficulty, setDifficulty] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<SearchResult | null>(null);
@@ -38,16 +55,26 @@ export function SwapButton({
   }, [mode]);
 
   useEffect(() => {
-    if (mode !== "searching" || !query.trim()) return;
+    if (mode !== "searching") return;
     const trimmed = query.trim();
+    const hasFilter = !!trimmed || !!category || !!difficulty;
     const ctrl = new AbortController();
     const timer = setTimeout(async () => {
+      if (!hasFilter) {
+        setResults([]);
+        setSearching(false);
+        return;
+      }
       setSearching(true);
       try {
-        const res = await fetch(
-          `/admin/api/questions?q=${encodeURIComponent(trimmed)}&limit=15`,
-          { signal: ctrl.signal },
-        );
+        const params = new URLSearchParams();
+        params.set("limit", "15");
+        if (trimmed) params.set("q", trimmed);
+        if (category) params.set("category", category);
+        if (difficulty) params.set("difficulty", difficulty);
+        const res = await fetch(`/admin/api/questions?${params.toString()}`, {
+          signal: ctrl.signal,
+        });
         if (!res.ok) {
           setResults([]);
           setSearching(false);
@@ -66,11 +93,13 @@ export function SwapButton({
       ctrl.abort();
       clearTimeout(timer);
     };
-  }, [query, mode, outId]);
+  }, [query, category, difficulty, mode, outId]);
 
   function reset() {
     setMode("idle");
     setQuery("");
+    setCategory("");
+    setDifficulty("");
     setResults([]);
     setSelected(null);
     setError(null);
@@ -116,6 +145,18 @@ export function SwapButton({
       </div>
     );
   }
+
+  const hasFilter = !!query.trim() || !!category || !!difficulty;
+  const selectStyle = {
+    border: "1px solid var(--hairline)",
+    borderRadius: 8,
+    padding: "5px 8px",
+    fontFamily: "var(--font-body)",
+    fontSize: 13,
+    background: "transparent",
+    color: "var(--ink)",
+    cursor: "pointer",
+  } as const;
 
   return (
     <div
@@ -166,6 +207,39 @@ export function SwapButton({
           </div>
           <div
             style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              marginTop: 8,
+            }}
+          >
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="">All categories</option>
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <select
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="">All difficulties</option>
+              {DIFFICULTIES.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div
+            style={{
               fontSize: 12,
               color: "var(--ink-soft)",
               marginTop: 8,
@@ -174,7 +248,7 @@ export function SwapButton({
             Replacing: <span style={{ color: "var(--ink)" }}>{outText}</span>
           </div>
           <div style={{ marginTop: 8 }}>
-            {!query.trim() && (
+            {!hasFilter && (
               <div
                 style={{
                   color: "var(--ink-soft)",
@@ -182,10 +256,10 @@ export function SwapButton({
                   padding: "8px 0",
                 }}
               >
-                Type to search…
+                Use the filters above or type to search…
               </div>
             )}
-            {query.trim() && searching && (
+            {hasFilter && searching && (
               <div
                 style={{
                   color: "var(--ink-soft)",
@@ -196,7 +270,7 @@ export function SwapButton({
                 Searching…
               </div>
             )}
-            {query.trim() && !searching && results.length === 0 && (
+            {hasFilter && !searching && results.length === 0 && (
               <div
                 style={{
                   color: "var(--ink-soft)",
@@ -204,10 +278,10 @@ export function SwapButton({
                   padding: "8px 0",
                 }}
               >
-                No approved questions match.
+                No questions match.
               </div>
             )}
-            {query.trim() &&
+            {hasFilter &&
               !searching &&
               results.map((r, i) => (
                 <div

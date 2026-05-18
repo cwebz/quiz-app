@@ -1,4 +1,4 @@
-import { and, eq, like, or } from "drizzle-orm";
+import { and, eq, like, or, type SQL } from "drizzle-orm";
 import { auth } from "@/auth";
 import { questions } from "@/db/schema";
 import { isAdminEmail } from "@/lib/admin";
@@ -6,6 +6,22 @@ import { getDb } from "@/lib/db";
 
 const STATUSES = ["pending", "approved", "rejected"] as const;
 type Status = (typeof STATUSES)[number];
+
+const CATEGORIES = [
+  "Music",
+  "Sport & Leisure",
+  "Film & TV",
+  "Arts & Literature",
+  "History",
+  "Society & Culture",
+  "Science",
+  "Geography",
+  "Food & Drink",
+  "General Knowledge",
+] as const;
+
+const DIFFICULTIES = ["easy", "medium", "hard"] as const;
+type Difficulty = (typeof DIFFICULTIES)[number];
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -17,8 +33,10 @@ export async function GET(request: Request) {
   const q = url.searchParams.get("q")?.trim() ?? "";
   const statusParam = url.searchParams.get("status") ?? "approved";
   const limitParam = url.searchParams.get("limit");
+  const categoryParam = url.searchParams.get("category") ?? "";
+  const difficultyParam = url.searchParams.get("difficulty") ?? "";
 
-  if (!q) {
+  if (!q && !categoryParam && !difficultyParam) {
     return Response.json({ questions: [] });
   }
 
@@ -30,6 +48,21 @@ export async function GET(request: Request) {
   }
   const status = statusParam as Status;
 
+  if (categoryParam && !(CATEGORIES as readonly string[]).includes(categoryParam)) {
+    return Response.json(
+      { error: `category must be one of ${CATEGORIES.join(", ")}` },
+      { status: 400 },
+    );
+  }
+
+  if (difficultyParam && !(DIFFICULTIES as readonly string[]).includes(difficultyParam)) {
+    return Response.json(
+      { error: `difficulty must be one of ${DIFFICULTIES.join(", ")}` },
+      { status: 400 },
+    );
+  }
+  const difficulty = difficultyParam ? (difficultyParam as Difficulty) : "";
+
   let limit = 20;
   if (limitParam !== null) {
     const parsed = Number.parseInt(limitParam, 10);
@@ -40,13 +73,23 @@ export async function GET(request: Request) {
   }
 
   const db = await getDb();
-  const numericId = /^\d+$/.test(q) ? Number.parseInt(q, 10) : null;
-  const pattern = `%${q}%`;
 
-  const textOrIdWhere =
-    numericId !== null
-      ? or(eq(questions.id, numericId), like(questions.text, pattern))
-      : like(questions.text, pattern);
+  const conditions: SQL[] = [eq(questions.status, status)];
+  if (q) {
+    const numericId = /^\d+$/.test(q) ? Number.parseInt(q, 10) : null;
+    const pattern = `%${q}%`;
+    conditions.push(
+      numericId !== null
+        ? or(eq(questions.id, numericId), like(questions.text, pattern))!
+        : like(questions.text, pattern),
+    );
+  }
+  if (categoryParam) {
+    conditions.push(eq(questions.category, categoryParam));
+  }
+  if (difficulty) {
+    conditions.push(eq(questions.difficulty, difficulty));
+  }
 
   const rows = await db
     .select({
@@ -57,7 +100,7 @@ export async function GET(request: Request) {
       status: questions.status,
     })
     .from(questions)
-    .where(and(eq(questions.status, status), textOrIdWhere))
+    .where(and(...conditions))
     .limit(limit);
 
   return Response.json({ questions: rows });

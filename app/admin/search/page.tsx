@@ -1,4 +1,4 @@
-import { eq, like, or } from "drizzle-orm";
+import { and, eq, like, or, type SQL } from "drizzle-orm";
 import { questions } from "@/db/schema";
 import { Ico } from "@/components/Icons";
 import { QuestionEditButton } from "@/components/QuestionEditButton";
@@ -6,30 +6,86 @@ import { getDb } from "@/lib/db";
 
 type QuestionRow = typeof questions.$inferSelect;
 
-async function search(q: string): Promise<QuestionRow[]> {
-  if (!q.trim()) return [];
+const CATEGORIES = [
+  "Music",
+  "Sport & Leisure",
+  "Film & TV",
+  "Arts & Literature",
+  "History",
+  "Society & Culture",
+  "Science",
+  "Geography",
+  "Food & Drink",
+  "General Knowledge",
+] as const;
+
+const DIFFICULTIES = ["easy", "medium", "hard"] as const;
+type Difficulty = (typeof DIFFICULTIES)[number];
+
+async function search({
+  q,
+  category,
+  difficulty,
+}: {
+  q: string;
+  category: string;
+  difficulty: Difficulty | "";
+}): Promise<QuestionRow[]> {
+  if (!q.trim() && !category && !difficulty) return [];
   const db = await getDb();
-  const numericId = /^\d+$/.test(q.trim()) ? Number.parseInt(q.trim(), 10) : null;
-  const pattern = `%${q.trim()}%`;
+
+  const conditions: SQL[] = [];
+  if (q.trim()) {
+    const trimmed = q.trim();
+    const numericId = /^\d+$/.test(trimmed) ? Number.parseInt(trimmed, 10) : null;
+    const pattern = `%${trimmed}%`;
+    conditions.push(
+      numericId !== null
+        ? or(eq(questions.id, numericId), like(questions.text, pattern))!
+        : like(questions.text, pattern),
+    );
+  }
+  if (category) conditions.push(eq(questions.category, category));
+  if (difficulty) conditions.push(eq(questions.difficulty, difficulty));
+
   return await db
     .select()
     .from(questions)
-    .where(
-      numericId !== null
-        ? or(eq(questions.id, numericId), like(questions.text, pattern))
-        : like(questions.text, pattern),
-    )
+    .where(conditions.length === 1 ? conditions[0] : and(...conditions))
     .limit(50);
 }
 
 export default async function AdminSearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; category?: string; difficulty?: string }>;
 }) {
   const params = await searchParams;
   const q = params.q?.toString() ?? "";
-  const rows = await search(q);
+  const categoryRaw = params.category?.toString() ?? "";
+  const difficultyRaw = params.difficulty?.toString() ?? "";
+  const category = (CATEGORIES as readonly string[]).includes(categoryRaw)
+    ? categoryRaw
+    : "";
+  const difficulty: Difficulty | "" = (DIFFICULTIES as readonly string[]).includes(
+    difficultyRaw,
+  )
+    ? (difficultyRaw as Difficulty)
+    : "";
+
+  const hasSearch = !!q || !!category || !!difficulty;
+  const rows = await search({ q, category, difficulty });
+
+  const selectStyle = {
+    border: "1px solid var(--hairline)",
+    borderRadius: 8,
+    padding: "5px 8px",
+    fontFamily: "var(--font-body)",
+    fontSize: 13,
+    background: "var(--bg, #fff)",
+    color: "var(--ink)",
+    cursor: "pointer",
+  } as const;
 
   return (
     <>
@@ -61,7 +117,23 @@ export default async function AdminSearchPage({
             color: "var(--ink)",
           }}
         />
-        {q && (
+        <select name="category" defaultValue={category} style={selectStyle}>
+          <option value="">All categories</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select name="difficulty" defaultValue={difficulty} style={selectStyle}>
+          <option value="">All difficulties</option>
+          {DIFFICULTIES.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+        {hasSearch && (
           <span className="chip chip--ghost">
             {rows.length} result{rows.length === 1 ? "" : "s"}
           </span>
@@ -71,7 +143,7 @@ export default async function AdminSearchPage({
         </button>
       </form>
 
-      {q && rows.length > 0 && (
+      {hasSearch && rows.length > 0 && (
         <div className="admin-table">
           <table>
             <thead>
@@ -118,7 +190,7 @@ export default async function AdminSearchPage({
         </div>
       )}
 
-      {q && rows.length === 0 && (
+      {hasSearch && rows.length === 0 && (
         <div className="card" style={{ textAlign: "center", padding: 32 }}>
           <p
             style={{
@@ -128,13 +200,13 @@ export default async function AdminSearchPage({
               margin: "0 auto",
             }}
           >
-            No questions match <strong>{q}</strong>. Try a different word or a
-            numeric question ID.
+            No questions match. Try a different word, a numeric question ID, or
+            adjust the filters.
           </p>
         </div>
       )}
 
-      {!q && (
+      {!hasSearch && (
         <div className="card" style={{ textAlign: "center", padding: 32 }}>
           <p
             style={{
@@ -144,8 +216,8 @@ export default async function AdminSearchPage({
               margin: "0 auto",
             }}
           >
-            Type a phrase or paste a question ID to find a question in the
-            pool.
+            Type a phrase, paste a question ID, or pick a category or
+            difficulty to find a question in the pool.
           </p>
         </div>
       )}
