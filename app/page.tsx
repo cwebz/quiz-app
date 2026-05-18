@@ -62,7 +62,13 @@ async function loadHomeState() {
 }
 
 export default async function Home() {
-  const { hasQuiz, alreadyPlayed, yesterdayResult } = await loadHomeState();
+  let state: Awaited<ReturnType<typeof loadHomeState>>;
+  try {
+    state = await loadHomeState();
+  } catch {
+    state = { today: new Date().toISOString().slice(0, 10), hasQuiz: false, alreadyPlayed: null, yesterdayResult: null };
+  }
+  const { hasQuiz, alreadyPlayed, yesterdayResult } = state;
   const today = new Date();
 
   return (
