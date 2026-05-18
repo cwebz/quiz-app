@@ -272,7 +272,6 @@ a { color: inherit; text-decoration: none; }
   width: 100%; max-width: 720px;
   display: flex; flex-direction: column; align-items: center;
   text-align: center;
-  padding-top: 28px;
 }
 .landing-date {
   font-family: var(--font-display);
@@ -281,7 +280,6 @@ a { color: inherit; text-decoration: none; }
   background: var(--primary-soft);
   padding: 8px 18px;
   border-radius: 999px;
-  margin-bottom: 16px;
   text-transform: uppercase; letter-spacing: 0.08em;
 }
 .landing h1 {
@@ -295,7 +293,7 @@ a { color: inherit; text-decoration: none; }
   max-width: 480px; margin: 0 auto 36px;
   line-height: 1.45;
 }
-.landing-mascot { margin-bottom: 12px; }
+.landing-mascot { }
 
 @media (max-width: 600px) {
   .landing h1 { font-size: 44px; }
