@@ -15,9 +15,9 @@ import { drizzle } from "drizzle-orm/d1";
 import openNextHandler from "./.open-next/worker.js";
 import { selectDailyQuiz } from "./lib/quiz/select";
 
-function nextUtcDate(now: Date = new Date()): string {
+function nextUtcDate(now: Date = new Date(), daysAhead = 2): string {
   const d = new Date(now);
-  d.setUTCDate(d.getUTCDate() + 1);
+  d.setUTCDate(d.getUTCDate() + daysAhead);
   return d.toISOString().slice(0, 10);
 }
 

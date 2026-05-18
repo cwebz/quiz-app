@@ -19,7 +19,7 @@ Product + copy guidelines: `../PRODUCT.md`
 | DB | Cloudflare D1 (SQLite) + Drizzle ORM | Wrangler manages migrations, not drizzle-kit |
 | Cache | Cloudflare KV | Per-question correctness rates; quiz counters |
 | Auth | Auth.js v5 — Google OAuth only | |
-| Cron | `scheduled()` handler in `worker.ts` | Runs at 23:55 UTC; selects tomorrow's quiz |
+| Cron | `scheduled()` handler in `worker.ts` | Runs at 23:55 UTC; selects quiz 2 days ahead (full-day review window) |
 
 **Stack is locked.** Don't suggest alternatives unless the user raises a problem.
 
@@ -49,8 +49,10 @@ Product + copy guidelines: `../PRODUCT.md`
 
 ### Cron trigger
 
-- Cron schedule lives in `wrangler.jsonc` under `"triggers"`. Currently **commented out** — requires a workers.dev subdomain to be activated first (Cloudflare dashboard → Workers & Pages → workers.dev subdomain).
-- Until cron is live, select tomorrow's quiz manually: `POST /admin/select-quiz?date=YYYY-MM-DD`
+- Cron schedule lives in `wrangler.jsonc` under `"triggers"`. **Live in production** — no workers.dev subdomain required.
+- Fires at **23:55 UTC** each night and queues the quiz for **2 days out** (e.g. runs May 18 → queues May 20), giving a full day to review questions before they go live.
+- A workers.dev subdomain is NOT required for cron triggers — ignore any docs that say otherwise.
+- To manually select a quiz: `POST /admin/select-quiz?date=YYYY-MM-DD`
 - To force-replace an existing quiz (keeps play state): `POST /admin/select-quiz?date=YYYY-MM-DD&force=true`
 - To fully reset a day — delete all play records AND pick new questions: go to **Admin → Dangerous → Reset day**, pick the date, and confirm. The underlying route is `POST /admin/reset-day?date=YYYY-MM-DD`.
 
