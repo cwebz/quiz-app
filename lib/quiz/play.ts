@@ -431,10 +431,13 @@ async function updateUserStats(
   userId: number,
   correctOnQuiz: number,
   finalScoreValue: number,
-  quizDate: string,
+  // Must be the quiz_date from the DB row, never a client-supplied value.
+  // Streak math keys today/yesterday off this string, so piping request
+  // input here would allow streak-padding attacks.
+  quizDateFromDb: string,
 ): Promise<{ freezeApplied: boolean; comebackJustEarned: boolean }> {
-  const today = quizDate;
-  const d = new Date(`${quizDate}T00:00:00Z`);
+  const today = quizDateFromDb;
+  const d = new Date(`${quizDateFromDb}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - 1);
   const yesterday = d.toISOString().slice(0, 10);
   const currentMonday = getIsoWeekMonday();

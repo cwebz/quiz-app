@@ -76,7 +76,7 @@ type CachedSession =
       totalQuestions: number;
     };
 
-function getTodayLocal(): string {
+function getLocalDateString(): string {
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -144,7 +144,7 @@ export default function QuizPlayPage() {
   useEffect(() => {
     if (!guestId) return;
     let aborted = false;
-    const today = getTodayLocal();
+    const today = getLocalDateString();
 
     // 1. Hydrate immediately from cache if a session for today exists.
     //    "playing" cache: drop into the existing question with the saved
@@ -282,7 +282,7 @@ export default function QuizPlayPage() {
   // Sync the cache to whatever's currently on screen. Anchored on `phase`
   // so every transition writes the right state.
   useEffect(() => {
-    const today = getTodayLocal();
+    const today = getLocalDateString();
     if (phase.kind === "playing") {
       saveCachedSession({
         date: today,

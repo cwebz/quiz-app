@@ -114,20 +114,37 @@ export function getUtcDateString(date: Date = new Date()): string {
 
 /**
  * Resolve the quiz date from a client-supplied local date string.
- * Accepts today or tomorrow in UTC terms (covers UTC+0 through UTC+14).
- * Rejects yesterday to prevent guests from replaying prior-day quizzes by
- * supplying a stale date; UTC-12 users may briefly see "no quiz" at the
- * very start of their local day until UTC rolls over (~1-2 hours max).
+ *
+ * Accepts UTC today or UTC tomorrow (diffDays ∈ {0, 1}). This covers all
+ * positive UTC offsets: a UTC+14 user at local midnight sends localDate =
+ * UTC+1 day, which is legitimate. The 23:55 UTC cron seeds quizzes 2 days
+ * ahead, so tomorrow's row is always present when needed.
+ *
+ * Rejects yesterday and earlier to prevent guests from replaying prior-day
+ * quizzes via a stale or manually set date. UTC-12 users at local midnight
+ * send localDate = UTC today (their midnight is UTC noon), so they are
+ * unaffected by this restriction.
+ *
+ * Known trade-off: any client can send localDate = utcTomorrow to preview
+ * tomorrow's questions up to ~24h early. Acceptable for trivia; revisit if
+ * quizzes become competitive.
+ *
  * Falls back to UTC today if the value is missing, malformed, or out of range.
  */
 export function resolveQuizDate(clientDate: string | null | undefined): string {
   const utcToday = getUtcDateString();
   if (!clientDate || !/^\d{4}-\d{2}-\d{2}$/.test(clientDate)) return utcToday;
   // Parse as explicit UTC midnight to avoid local-tz skew on the server.
-  const ms = new Date(`${clientDate}T00:00:00Z`).getTime();
-  if (Number.isNaN(ms)) return utcToday;
-  const diffDays = (ms - new Date(`${utcToday}T00:00:00Z`).getTime()) / 86_400_000;
-  if (diffDays < 0 || diffDays > 1) return utcToday;
+  const parsed = new Date(`${clientDate}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return utcToday;
+  // Round-trip check: rejects impossible dates like "2026-02-30" that JS
+  // silently normalises (e.g. to 2026-03-02) rather than returning NaN.
+  if (parsed.toISOString().slice(0, 10) !== clientDate) return utcToday;
+  const diffDays = (parsed.getTime() - new Date(`${utcToday}T00:00:00Z`).getTime()) / 86_400_000;
+  if (diffDays < 0 || diffDays > 1) {
+    console.warn("[resolveQuizDate] out-of-range localDate rejected", { clientDate, utcToday });
+    return utcToday;
+  }
   return clientDate;
 }
 

@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { dailyQuizzes } from "@/db/schema";
 import { getDb, getEnv } from "@/lib/db";
 import { buildStart, findExistingAttempt } from "@/lib/quiz/play";
-import { resolveQuizDate } from "@/lib/quiz/select";
+import { getUtcDateString, resolveQuizDate } from "@/lib/quiz/select";
 
 export async function POST(request: Request) {
   let body: { guestId?: string; localDate?: string };
@@ -38,6 +38,19 @@ export async function POST(request: Request) {
       { error: "QUIZ_TOKEN_SECRET not configured" },
       { status: 500 },
     );
+  }
+
+  // Rate limit: max 20 starts per IP per UTC day. Generous enough to cover
+  // timezone edge cases (today + tomorrow quiz) and retries; blocks bulk
+  // enumeration. Keyed by UTC date so the counter resets at UTC midnight.
+  if (env.QUIZ_KV) {
+    const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+    const rlKey = `rate:start:${ip}:${getUtcDateString()}`;
+    const count = Number((await env.QUIZ_KV.get(rlKey)) ?? "0");
+    if (count >= 20) {
+      return Response.json({ error: "rate limit exceeded" }, { status: 429 });
+    }
+    await env.QUIZ_KV.put(rlKey, String(count + 1), { expirationTtl: 172800 });
   }
 
   const date = resolveQuizDate(body.localDate ?? null);
