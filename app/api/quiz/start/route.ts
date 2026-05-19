@@ -3,12 +3,12 @@ import { auth } from "@/auth";
 import { dailyQuizzes } from "@/db/schema";
 import { getDb, getEnv } from "@/lib/db";
 import { buildStart, findExistingAttempt } from "@/lib/quiz/play";
-import { getUtcDateString } from "@/lib/quiz/select";
+import { resolveQuizDate } from "@/lib/quiz/select";
 
 export async function POST(request: Request) {
-  let body: { guestId?: string };
+  let body: { guestId?: string; localDate?: string };
   try {
-    body = (await request.json()) as { guestId?: string };
+    body = (await request.json()) as { guestId?: string; localDate?: string };
   } catch {
     return Response.json({ error: "invalid JSON body" }, { status: 400 });
   }
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const date = getUtcDateString();
+  const date = resolveQuizDate(body.localDate ?? null);
   const quiz = await db
     .select()
     .from(dailyQuizzes)

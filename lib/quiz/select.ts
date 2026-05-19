@@ -112,6 +112,25 @@ export function getUtcDateString(date: Date = new Date()): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Resolve the quiz date from a client-supplied local date string.
+ * Accepts today or tomorrow in UTC terms (covers UTC+0 through UTC+14).
+ * Rejects yesterday to prevent guests from replaying prior-day quizzes by
+ * supplying a stale date; UTC-12 users may briefly see "no quiz" at the
+ * very start of their local day until UTC rolls over (~1-2 hours max).
+ * Falls back to UTC today if the value is missing, malformed, or out of range.
+ */
+export function resolveQuizDate(clientDate: string | null | undefined): string {
+  const utcToday = getUtcDateString();
+  if (!clientDate || !/^\d{4}-\d{2}-\d{2}$/.test(clientDate)) return utcToday;
+  // Parse as explicit UTC midnight to avoid local-tz skew on the server.
+  const ms = new Date(`${clientDate}T00:00:00Z`).getTime();
+  if (Number.isNaN(ms)) return utcToday;
+  const diffDays = (ms - new Date(`${utcToday}T00:00:00Z`).getTime()) / 86_400_000;
+  if (diffDays < 0 || diffDays > 1) return utcToday;
+  return clientDate;
+}
+
 function shuffleInPlace<T>(arr: T[]): void {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

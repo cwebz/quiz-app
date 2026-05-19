@@ -222,6 +222,7 @@ export async function processAnswer(opts: {
     const results = await persistComplete({
       db: opts.db,
       state: { ...state, answered: allAnswered },
+      quizDate: quiz[0].quizDate,
     });
     return { kind: "complete", feedback, results };
   }
@@ -326,6 +327,7 @@ async function computeLivePercentile(
 async function persistComplete(opts: {
   db: DB;
   state: QuizSessionState;
+  quizDate: string;
 }): Promise<QuizResults> {
   const { db, state } = opts;
   const correct = correctCount(state.answered);
@@ -399,6 +401,7 @@ async function persistComplete(opts: {
       state.userId,
       correct,
       final,
+      opts.quizDate,
     ));
     await updateCategoryMastery(db, state.userId, state.answered);
   }
@@ -412,12 +415,6 @@ async function persistComplete(opts: {
     state.answered,
     { freezeApplied, comebackJustEarned },
   );
-}
-
-function utcDateNDaysAgo(days: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString().slice(0, 10);
 }
 
 function getIsoWeekMonday(date: Date = new Date()): string {
@@ -434,9 +431,12 @@ async function updateUserStats(
   userId: number,
   correctOnQuiz: number,
   finalScoreValue: number,
+  quizDate: string,
 ): Promise<{ freezeApplied: boolean; comebackJustEarned: boolean }> {
-  const today = utcDateNDaysAgo(0);
-  const yesterday = utcDateNDaysAgo(1);
+  const today = quizDate;
+  const d = new Date(`${quizDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  const yesterday = d.toISOString().slice(0, 10);
   const currentMonday = getIsoWeekMonday();
 
   const [existing] = await db

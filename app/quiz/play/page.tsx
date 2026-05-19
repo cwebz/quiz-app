@@ -76,8 +76,12 @@ type CachedSession =
       totalQuestions: number;
     };
 
-function getTodayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
+function getTodayLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function loadCachedSession(today: string): CachedSession | null {
@@ -140,7 +144,7 @@ export default function QuizPlayPage() {
   useEffect(() => {
     if (!guestId) return;
     let aborted = false;
-    const today = getTodayUtc();
+    const today = getTodayLocal();
 
     // 1. Hydrate immediately from cache if a session for today exists.
     //    "playing" cache: drop into the existing question with the saved
@@ -170,7 +174,7 @@ export default function QuizPlayPage() {
     (async () => {
       try {
         const todayRes = await fetch(
-          `/api/quiz/today?guestId=${encodeURIComponent(guestId)}`,
+          `/api/quiz/today?guestId=${encodeURIComponent(guestId)}&localDate=${encodeURIComponent(today)}`,
         );
         if (!todayRes.ok) throw new Error(`today API: ${todayRes.status}`);
         const todayData = (await todayRes.json()) as TodayResponse;
@@ -238,7 +242,7 @@ export default function QuizPlayPage() {
         const startRes = await fetch("/api/quiz/start", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ guestId }),
+          body: JSON.stringify({ guestId, localDate: today }),
         });
         const startData = (await startRes.json()) as
           | (StartResult & { status: "started" })
@@ -278,7 +282,7 @@ export default function QuizPlayPage() {
   // Sync the cache to whatever's currently on screen. Anchored on `phase`
   // so every transition writes the right state.
   useEffect(() => {
-    const today = getTodayUtc();
+    const today = getTodayLocal();
     if (phase.kind === "playing") {
       saveCachedSession({
         date: today,
