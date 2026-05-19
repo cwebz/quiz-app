@@ -12,6 +12,7 @@ type InputQuestion = {
   category: string;
   difficulty: "easy" | "medium" | "hard";
   sourceUrl?: string;
+  status?: "pending" | "approved";
 };
 
 function parseArgs() {
@@ -40,6 +41,7 @@ async function insertLocal(input: InputQuestion[]) {
     let skipped = 0;
 
     for (const q of input) {
+      const status = q.status ?? "pending";
       const result = await db
         .insert(questions)
         .values({
@@ -50,7 +52,7 @@ async function insertLocal(input: InputQuestion[]) {
           incorrectAnswers: q.incorrectAnswers,
           category: q.category,
           difficulty: q.difficulty,
-          status: "pending",
+          status,
           sourceUrl: q.sourceUrl ?? null,
         })
         .onConflictDoNothing({
@@ -78,10 +80,11 @@ async function insertRemote(input: InputQuestion[]) {
 
   for (const q of input) {
     const externalId = hashText(q.text);
+    const status = q.status ?? "pending";
     const incorrectAnswers = JSON.stringify(q.incorrectAnswers);
     const sql = [
       `INSERT INTO questions (external_id, source, text, correct_answer, incorrect_answers, category, difficulty, status, source_url)`,
-      `VALUES (${sqlStr(externalId)}, 'claude-generated', ${sqlStr(q.text)}, ${sqlStr(q.correctAnswer)}, ${sqlStr(incorrectAnswers)}, ${sqlStr(q.category)}, ${sqlStr(q.difficulty)}, 'pending', ${q.sourceUrl ? sqlStr(q.sourceUrl) : "NULL"})`,
+      `VALUES (${sqlStr(externalId)}, 'claude-generated', ${sqlStr(q.text)}, ${sqlStr(q.correctAnswer)}, ${sqlStr(incorrectAnswers)}, ${sqlStr(q.category)}, ${sqlStr(q.difficulty)}, ${sqlStr(status)}, ${q.sourceUrl ? sqlStr(q.sourceUrl) : "NULL"})`,
       `ON CONFLICT(source, external_id) DO NOTHING;`,
     ].join(" ");
 
@@ -100,9 +103,10 @@ async function insertRemote(input: InputQuestion[]) {
 async function main() {
   const { file, remote } = parseArgs();
   const input: InputQuestion[] = JSON.parse(readFileSync(file, "utf-8"));
+  const statuses = [...new Set(input.map((q) => q.status ?? "pending"))].join("/");
 
   console.log(
-    `Inserting ${input.length} question(s) into ${remote ? "production" : "local"} D1 as pending...\n`,
+    `Inserting ${input.length} question(s) into ${remote ? "production" : "local"} D1 as ${statuses}...\n`,
   );
 
   if (remote) {

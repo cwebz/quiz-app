@@ -1,29 +1,43 @@
-Generate trivia questions for Smarter Than The Internet and insert them into D1 as pending questions for admin review.
+Generate trivia questions for Smarter Than The Internet and insert them into production D1.
 
 ## Usage
 ```
-/generate-questions [topic]
-/generate-questions [topic] --remote
+/generate-questions [topic] [--count=N] [--skip-review]
 ```
 
-- `topic` — optional subject or event (e.g. "2025 Super Bowl", "Taylor Swift Eras Tour", "James Webb Telescope discoveries")
-- `--remote` — insert directly into production D1 instead of local
+- `topic` — optional subject or event (e.g. "2025 Super Bowl", "Taylor Swift Eras Tour")
+- `--count=N` — number of questions to generate (default: 10)
+- `--skip-review` — skip in-chat review; insert all questions to production as `pending`
 
-## Instructions
+Without `--skip-review`, Claude presents each question for review. Approved questions are inserted to production as `approved`. Rejected ones are dropped.
 
-### 1. Determine topic
-If `$ARGUMENTS` contains a topic (any text other than `--remote`), use that. Otherwise pick something timely and interesting based on today's date — a recent event, anniversary, pop culture moment, or current season.
+---
 
-### 2. Research the topic
-Use web search to find 2–3 authoritative, citable sources (Wikipedia, major news outlets, official sites). Record the best source URL — this will be stored with each question so the admin can fact-check before approving.
+## Step 1 — Parse arguments from `$ARGUMENTS`
 
-### 3. Generate 5 questions
-Each question must:
-- Be multiple choice with **exactly 3 incorrect answers**
-- Have a single unambiguous correct answer grounded in the sources you found
-- Use incorrect answers that are plausible but clearly wrong on reflection
-- Mix difficulty: aim for 2 easy, 2 medium, 1 hard
-- Map to exactly one of these categories:
+Extract:
+- `topic`: any text that is not a flag
+- `count`: value from `--count=N`, default 10 if not provided
+- `skipReview`: true if `--skip-review` is present
+
+If no topic is given, pick something timely and interesting based on today's date — a recent event, anniversary, pop culture moment, or current season.
+
+---
+
+## Step 2 — Research the topic
+
+Use web search to find 2–3 authoritative, citable sources (Wikipedia, major news outlets, official sites). Record the best source URL per question for fact-checking.
+
+---
+
+## Step 3 — Generate questions
+
+Generate exactly `count` questions. Each must have:
+- Clear, unambiguous question text
+- Exactly 1 correct answer (grounded in the sources you found)
+- Exactly 3 plausible but clearly wrong incorrect answers
+- A difficulty: `easy`, `medium`, or `hard` — distribute evenly across the set
+- A category from this list only:
   - `arts_and_literature`
   - `film_and_tv`
   - `food_and_drink`
@@ -34,51 +48,69 @@ Each question must:
   - `sport_and_leisure`
   - `history`
   - `general_knowledge`
+- A `sourceUrl` pointing to the authoritative source for that question
 
-### 4. Write questions to a temp file
-Write the questions to `/tmp/generated-quiz-questions.json` in this exact format:
+---
 
-```json
-[
-  {
-    "text": "Question text here?",
-    "correctAnswer": "The correct answer",
-    "incorrectAnswers": ["Wrong 1", "Wrong 2", "Wrong 3"],
-    "category": "history",
-    "difficulty": "medium",
-    "sourceUrl": "https://en.wikipedia.org/wiki/..."
-  }
-]
-```
+## Step 4 — Branch on `--skip-review`
 
-### 5. Apply the migration if needed
-Before inserting, check whether the `source_url` column exists on the local DB:
+### If `--skip-review` is set:
+
+Display a compact summary table:
+
+| # | Question | Answer | Difficulty | Category |
+|---|----------|--------|------------|----------|
+| 1 | ...      | ...    | medium     | history  |
+
+Then write all questions to `/tmp/generated-quiz-questions.json` and insert to production as `pending`:
 
 ```bash
-cd web && npx wrangler d1 execute smarter-than-the-internet --local --command "SELECT source_url FROM questions LIMIT 1;" 2>&1
-```
-
-If it errors with "no such column", run the migration first:
-```bash
-cd web && npm run db:local
-```
-
-### 6. Insert questions
-Run from the `web/` directory:
-
-```bash
-# Local (default — for review before pushing to prod):
-cd web && npx tsx scripts/insert-questions.ts --file=/tmp/generated-quiz-questions.json
-
-# Production:
 cd web && npx tsx scripts/insert-questions.ts --file=/tmp/generated-quiz-questions.json --remote
 ```
 
-### 7. Report results
-Print a summary table:
+Finish by printing: **"X questions inserted to production as `pending`. Review them at /admin/pending."**
 
-| # | Question (truncated) | Correct Answer | Difficulty | Category | Source |
-|---|----------------------|----------------|------------|----------|--------|
-| 1 | ... | ... | medium | history | [link] |
+---
 
-Then remind the user: **Questions are inserted as `pending` — visit `/admin/pending` to review and approve before they enter the quiz pool.**
+### If no `--skip-review` (interactive review):
+
+Present each question as a numbered block, one at a time or all at once if count ≤ 10:
+
+```
+[1] MEDIUM — history
+Q: Question text here?
+✓  Correct answer
+✗  Wrong answer 1
+✗  Wrong answer 2
+✗  Wrong answer 3
+🔗 https://source-url.com
+```
+
+After showing all questions, ask:
+
+> Which questions do you want to approve? Reply with "all", "none", or a list of numbers (e.g. "1 2 4 7"). You can also say "all except 3 5".
+
+Wait for the user's response. Parse their reply to determine the approved set.
+
+Once you have the approved list, confirm:
+
+> Ready to insert **X approved questions** into production as `approved`. Proceed?
+
+Wait for confirmation (yes/no). If confirmed:
+
+1. Write only the approved questions to `/tmp/generated-quiz-questions.json` with a `status` field of `"approved"`
+2. Run the insert script:
+
+```bash
+cd web && npx tsx scripts/insert-questions.ts --file=/tmp/generated-quiz-questions.json --remote
+```
+
+Finish by printing: **"X questions inserted to production as `approved` and will be eligible for quiz selection immediately."**
+
+---
+
+## Notes
+
+- The insert script uses `ON CONFLICT DO NOTHING` — exact duplicate question text is silently skipped
+- Questions approved here bypass `/admin/pending` and enter the quiz pool directly
+- Questions inserted via `--skip-review` show up at `/admin/pending` for later review
