@@ -26,7 +26,7 @@ export type EditableQuestion = {
   incorrectAnswers: string[];
   category: string;
   difficulty: Difficulty;
-  source: "the-trivia-api" | "opentdb";
+  source: "the-trivia-api" | "opentdb" | "claude-generated";
   manuallyEdited: boolean;
 };
 

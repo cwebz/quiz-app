@@ -12,7 +12,7 @@ export const questions = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     externalId: text("external_id").notNull(),
-    source: text("source", { enum: ["the-trivia-api", "opentdb"] }).notNull(),
+    source: text("source", { enum: ["the-trivia-api", "opentdb", "claude-generated"] }).notNull(),
     text: text("text").notNull(),
     correctAnswer: text("correct_answer").notNull(),
     incorrectAnswers: text("incorrect_answers", { mode: "json" })
@@ -31,6 +31,7 @@ export const questions = sqliteTable(
     manuallyEdited: integer("manually_edited", { mode: "boolean" })
       .notNull()
       .default(false),
+    sourceUrl: text("source_url"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
