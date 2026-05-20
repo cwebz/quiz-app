@@ -115,15 +115,18 @@ export function getUtcDateString(date: Date = new Date()): string {
 /**
  * Resolve the quiz date from a client-supplied local date string.
  *
- * Accepts UTC today or UTC tomorrow (diffDays ∈ {0, 1}). This covers all
- * positive UTC offsets: a UTC+14 user at local midnight sends localDate =
- * UTC+1 day, which is legitimate. The 23:55 UTC cron seeds quizzes 2 days
- * ahead, so tomorrow's row is always present when needed.
+ * Accepts UTC yesterday through UTC tomorrow (diffDays ∈ {-1, 0, 1}).
  *
- * Rejects yesterday and earlier to prevent guests from replaying prior-day
- * quizzes via a stale or manually set date. UTC-12 users at local midnight
- * send localDate = UTC today (their midnight is UTC noon), so they are
- * unaffected by this restriction.
+ * diffDays = +1 covers UTC+ users at local midnight whose local date is
+ * already UTC tomorrow. The 23:55 UTC cron seeds 2 days ahead so that row
+ * is always present.
+ *
+ * diffDays = -1 covers UTC− users (EST, PST, etc.) between UTC midnight and
+ * their local midnight. At 10 pm EST, UTC is already the next calendar day,
+ * so the client's local date is one day behind UTC — that is still a valid
+ * "today" for that user and must not be rejected.
+ *
+ * Replay protection is handled by the attempt record, not the date window.
  *
  * Known trade-off: any client can send localDate = utcTomorrow to preview
  * tomorrow's questions up to ~24h early. Acceptable for trivia; revisit if
@@ -141,7 +144,7 @@ export function resolveQuizDate(clientDate: string | null | undefined): string {
   // silently normalises (e.g. to 2026-03-02) rather than returning NaN.
   if (parsed.toISOString().slice(0, 10) !== clientDate) return utcToday;
   const diffDays = (parsed.getTime() - new Date(`${utcToday}T00:00:00Z`).getTime()) / 86_400_000;
-  if (diffDays < 0 || diffDays > 1) {
+  if (diffDays < -1 || diffDays > 1) {
     console.warn("[resolveQuizDate] out-of-range localDate rejected", { clientDate, utcToday });
     return utcToday;
   }
