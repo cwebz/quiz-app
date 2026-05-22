@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import type { Session } from "next-auth";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { userStats, users } from "@/db/schema";
@@ -19,24 +20,41 @@ function initials(name?: string | null): string {
 }
 
 async function loadProfileStub(userId: number) {
-  const db = await getDb();
-  const [row] = await db
-    .select({
-      displayName: users.displayName,
-      currentStreak: userStats.currentStreak,
-    })
-    .from(users)
-    .leftJoin(userStats, eq(users.id, userStats.userId))
-    .where(eq(users.id, userId))
-    .limit(1);
-  return {
-    displayName: row?.displayName ?? "Player",
-    currentStreak: row?.currentStreak ?? 0,
-  };
+  try {
+    const db = await getDb();
+    const [row] = await db
+      .select({
+        displayName: users.displayName,
+        currentStreak: userStats.currentStreak,
+      })
+      .from(users)
+      .leftJoin(userStats, eq(users.id, userStats.userId))
+      .where(eq(users.id, userId))
+      .limit(1);
+    return {
+      displayName: row?.displayName ?? "Player",
+      currentStreak: row?.currentStreak ?? 0,
+    };
+  } catch (err) {
+    // D1 hiccup or other transient failure — don't let it crash the whole
+    // layout. Fall back to a generic chip; the user can still navigate.
+    console.warn("[Topbar] loadProfileStub failed:", err);
+    return { displayName: "Player", currentStreak: 0 };
+  }
 }
 
 export async function Topbar() {
-  const session = await auth();
+  // auth() can throw on transient errors (D1 hiccups inside the JWT callback,
+  // JWT decrypt failures after AUTH_SECRET rotation, etc). Topbar lives in the
+  // root layout, so an unhandled throw here crashes EVERY route into the
+  // global error boundary. Treat any failure as "logged out" and render
+  // normally.
+  let session: Session | null = null;
+  try {
+    session = (await auth()) as Session | null;
+  } catch (err) {
+    console.warn("[Topbar] auth() failed; rendering as logged-out:", err);
+  }
   const userId = session?.userId;
   const email = session?.user?.email ?? null;
   const isAdmin = isAdminEmail(email);
