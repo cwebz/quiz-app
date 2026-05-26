@@ -1,15 +1,22 @@
 import { eq } from "drizzle-orm";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { auth } from "@/auth";
+import { HomeDateSync } from "@/components/HomeDateSync";
 import { ScoreRing } from "@/components/ScoreRing";
 import { Ico } from "@/components/Icons";
 import { Mascot } from "@/components/Mascot";
 import { dailyQuizzes } from "@/db/schema";
 import { getDb } from "@/lib/db";
 import { findExistingAttempt, type QuizResults } from "@/lib/quiz/play";
-import { getUtcDateString } from "@/lib/quiz/select";
+import { resolveQuizDate } from "@/lib/quiz/select";
 
-function fmtDate(d: Date): string {
+/**
+ * Format a YYYY-MM-DD string as a long human label.
+ * Parsed at UTC noon so timezone math can't shift the displayed day.
+ */
+function fmtDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00Z`);
   return d.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -18,11 +25,16 @@ function fmtDate(d: Date): string {
   });
 }
 
-async function loadHomeState() {
+function subtractOneDay(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+async function loadHomeState(today: string) {
   const session = await auth();
   const userId = session?.userId ?? null;
-  const today = getUtcDateString();
-  const yesterday = getUtcDateString(new Date(Date.now() - 86_400_000));
+  const yesterday = subtractOneDay(today);
 
   const db = await getDb();
   const [quiz] = await db
@@ -61,18 +73,32 @@ async function loadHomeState() {
   return { today, hasQuiz: !!quiz, alreadyPlayed, yesterdayResult };
 }
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  // Resolve the user's local date in this order:
+  //   1. ?date= URL param (set by the client redirect on first visit)
+  //   2. stti.local_date cookie (set by the client on every mount)
+  //   3. UTC fallback (first visit before any client JS runs)
+  // resolveQuizDate validates the value is within ±1 day of UTC so we never
+  // honor a stale or malicious date.
+  const params = await searchParams;
+  const cookieDate = (await cookies()).get("stti.local_date")?.value;
+  const today = resolveQuizDate(params.date ?? cookieDate ?? null);
+
   let state: Awaited<ReturnType<typeof loadHomeState>>;
   try {
-    state = await loadHomeState();
+    state = await loadHomeState(today);
   } catch {
-    state = { today: new Date().toISOString().slice(0, 10), hasQuiz: false, alreadyPlayed: null, yesterdayResult: null };
+    state = { today, hasQuiz: false, alreadyPlayed: null, yesterdayResult: null };
   }
   const { hasQuiz, alreadyPlayed, yesterdayResult } = state;
-  const today = new Date();
 
   return (
     <div className="landing">
+      <HomeDateSync serverDate={today} />
       <div className="landing-date">
         <Ico.Calendar
           style={{
