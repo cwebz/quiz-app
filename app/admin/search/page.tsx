@@ -1,6 +1,7 @@
 import { and, count, desc, eq, like, or, type SQL } from "drizzle-orm";
 import { questions } from "@/db/schema";
 import { Ico } from "@/components/Icons";
+import { QuestionActions } from "@/components/QuestionActionButtons";
 import { QuestionEditButton } from "@/components/QuestionEditButton";
 import { getDb } from "@/lib/db";
 
@@ -225,7 +226,13 @@ export default async function AdminSearchPage({
                     {r.category}
                   </td>
                   <td>
-                    <QuestionEditButton question={r} />
+                    <div className="admin-actions">
+                      <QuestionActions
+                        questionId={r.id}
+                        actions={["reject"]}
+                      />
+                      <QuestionEditButton question={r} />
+                    </div>
                   </td>
                 </tr>
               ))}

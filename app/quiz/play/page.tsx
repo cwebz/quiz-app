@@ -954,7 +954,6 @@ function ResultsScreen({ results }: { results: QuizResults }) {
           correct={correct}
           total={total}
           finalScore={results.finalScore}
-          percentile={percentile}
           totalSec={totalSec}
           perQuestion={results.perQuestion}
         />
@@ -1177,7 +1176,6 @@ function ShareCard({
   correct,
   total,
   finalScore,
-  percentile,
   totalSec,
   perQuestion,
 }: {
@@ -1185,15 +1183,14 @@ function ShareCard({
   correct: number;
   total: number;
   finalScore: number;
-  percentile: number;
   totalSec: number;
   perQuestion: QuizResults["perQuestion"];
 }) {
-  const emojiRow = perQuestion.map((q) => (q.wasCorrect ? "✅" : "❌")).join("");
+  const emojiRow = perQuestion.map((q) => (q.wasCorrect ? "✅" : "🟥")).join("");
   const shareText = [
-    `Smarter Than The Internet · ${dateShort}`,
-    `${emojiRow}  ${correct}/${total} · ${finalScore} pts`,
-    `Beat ${percentile}% of players · ${totalSec.toFixed(0)}s`,
+    "Smarter Than The Internet",
+    `${dateShort} · ${emojiRow}`,
+    `${correct}/${total} · ${totalSec.toFixed(0)}s · ${finalScore} pts`,
     "smarterthantheinternet.com",
   ].join("\n");
 
