@@ -29,7 +29,18 @@ test("guest completes a full quiz and sees results", async ({ page }) => {
   await expect(page.locator("h1")).toContainText("smarter than");
   await page.getByRole("link", { name: /start today/i }).click();
 
-  // The quiz page loads and the first question appears.
+  // The ready screen or question card should appear. If it's the ready
+  // screen, click Start Quiz first.
+  await expect(
+    page.getByRole("button", { name: /start quiz/i })
+      .or(page.locator(".question-card")),
+  ).toBeVisible({ timeout: 15_000 });
+  const startBtn = page.getByRole("button", { name: /start quiz/i });
+  if (await startBtn.isVisible()) {
+    await startBtn.click();
+  }
+
+  // The first question appears.
   await expect(page.locator(".question-card")).toBeVisible({ timeout: 15_000 });
 
   // ── Answer all 5 questions ────────────────────────────────────────────────

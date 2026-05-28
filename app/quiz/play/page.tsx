@@ -35,6 +35,7 @@ type AnsweredState = {
 type Phase =
   | { kind: "loading" }
   | { kind: "no-quiz"; date: string }
+  | { kind: "ready"; totalQuestions: number }
   | {
       kind: "playing";
       token: string;
@@ -67,6 +68,7 @@ type CachedSession =
       questionIndex: number;
       totalQuestions: number;
       deadline: number;
+      identity: "user" | "guest";
     }
   | {
       date: string;
@@ -74,6 +76,7 @@ type CachedSession =
       advanceToken: string;
       nextIndex: number;
       totalQuestions: number;
+      identity: "user" | "guest";
     };
 
 function getLocalDateString(): string {
@@ -124,6 +127,7 @@ function clearCachedSession(): void {
 export default function QuizPlayPage() {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [guestId, setGuestId] = useState<string | null>(null);
+  const identityRef = useRef<"user" | "guest">("guest");
 
   useEffect(() => {
     let id = localStorage.getItem(GUEST_ID_KEY);
@@ -180,6 +184,8 @@ export default function QuizPlayPage() {
         const todayData = (await todayRes.json()) as TodayResponse;
         if (aborted) return;
 
+        identityRef.current = todayData.identity;
+
         if (todayData.status === "no-quiz-today") {
           clearCachedSession();
           setPhase({ kind: "no-quiz", date: todayData.date });
@@ -193,10 +199,16 @@ export default function QuizPlayPage() {
         }
 
         // The cached session token was issued for whichever identity the
-        // player had when it was written. If they've since signed in, the
-        // token is bound to the old guestId and any finished attempts get
-        // adopted at sign-in (auth.ts) — drop the cache and start fresh.
-        if (todayData.identity === "user" && cached !== null) {
+        // player had when it was written. If they've since signed in but
+        // the cache was written as a guest, the token is bound to the old
+        // guestId and any finished attempts get adopted at sign-in
+        // (auth.ts) — drop the cache and start fresh. Cache written while
+        // already signed in stays valid.
+        if (
+          todayData.identity === "user" &&
+          cached !== null &&
+          (cached.identity ?? "guest") === "guest"
+        ) {
           clearCachedSession();
           cached = null;
           hasCachedHydration = false;
@@ -239,34 +251,9 @@ export default function QuizPlayPage() {
           }
         }
 
-        const startRes = await fetch("/api/quiz/start", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ guestId, localDate: today }),
-        });
-        const startData = (await startRes.json()) as
-          | (StartResult & { status: "started" })
-          | { status: "already-played"; results: QuizResults }
-          | { error: string };
-        if (aborted) return;
-        if ("error" in startData) {
-          setPhase({ kind: "error", message: startData.error });
-          return;
-        }
-        if (startData.status === "already-played") {
-          clearCachedSession();
-          setPhase({ kind: "results", results: startData.results });
-          return;
-        }
-        setPhase({
-          kind: "playing",
-          token: startData.token,
-          question: startData.question,
-          questionIndex: startData.questionIndex,
-          totalQuestions: startData.totalQuestions,
-          deadline: Date.now() + QUESTION_TIME_LIMIT_MS,
-          selected: null,
-        });
+        // No cached session and server says "ready" — show the ready
+        // screen so the quiz only starts on explicit user intent.
+        setPhase({ kind: "ready", totalQuestions: todayData.totalQuestions });
       } catch (err) {
         if (!aborted) {
           setPhase({ kind: "error", message: String(err) });
@@ -292,6 +279,7 @@ export default function QuizPlayPage() {
         questionIndex: phase.questionIndex,
         totalQuestions: phase.totalQuestions,
         deadline: phase.deadline,
+        identity: identityRef.current,
       });
     } else if (phase.kind === "revealed" && phase.answered.next) {
       // Mid-quiz feedback. Stash the advance token so a refresh during
@@ -304,6 +292,7 @@ export default function QuizPlayPage() {
         advanceToken: next.advanceToken,
         nextIndex: next.nextIndex,
         totalQuestions: next.totalQuestions,
+        identity: identityRef.current,
       });
     } else if (
       phase.kind === "results" ||
@@ -436,6 +425,42 @@ export default function QuizPlayPage() {
     }
   }, [phase, advancing]);
 
+  const startQuiz = useCallback(async () => {
+    if (!guestId) return;
+    const today = getLocalDateString();
+    try {
+      const startRes = await fetch("/api/quiz/start", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ guestId, localDate: today }),
+      });
+      const startData = (await startRes.json()) as
+        | (StartResult & { status: "started" })
+        | { status: "already-played"; results: QuizResults }
+        | { error: string };
+      if ("error" in startData) {
+        setPhase({ kind: "error", message: startData.error });
+        return;
+      }
+      if (startData.status === "already-played") {
+        clearCachedSession();
+        setPhase({ kind: "results", results: startData.results });
+        return;
+      }
+      setPhase({
+        kind: "playing",
+        token: startData.token,
+        question: startData.question,
+        questionIndex: startData.questionIndex,
+        totalQuestions: startData.totalQuestions,
+        deadline: Date.now() + QUESTION_TIME_LIMIT_MS,
+        selected: null,
+      });
+    } catch (err) {
+      setPhase({ kind: "error", message: String(err) });
+    }
+  }, [guestId]);
+
   if (phase.kind === "loading") {
     return <LoadingScreen />;
   }
@@ -444,6 +469,14 @@ export default function QuizPlayPage() {
   }
   if (phase.kind === "no-quiz") {
     return <NoQuizScreen date={phase.date} />;
+  }
+  if (phase.kind === "ready") {
+    return (
+      <ReadyScreen
+        totalQuestions={phase.totalQuestions}
+        onStart={startQuiz}
+      />
+    );
   }
   if (phase.kind === "results") {
     return <ResultsScreen results={phase.results} />;
@@ -536,6 +569,20 @@ function NoQuizScreen({ date }: { date: string }) {
       <p style={{ color: "var(--ink-soft)", fontSize: 14, marginTop: 8 }}>
         Tomorrow&apos;s quiz hasn&apos;t been queued yet. Try again later.
       </p>
+    </div>
+  );
+}
+
+function ReadyScreen({ totalQuestions, onStart }: { totalQuestions: number; onStart: () => void }) {
+  return (
+    <div className="card" style={{ maxWidth: 520, marginTop: 40, textAlign: "center", padding: 40 }}>
+      <h2 style={{ marginBottom: 8 }}>Ready for today&apos;s quiz?</h2>
+      <p style={{ color: "var(--ink-soft)", fontSize: 14, marginBottom: 24 }}>
+        {totalQuestions} questions · 20 seconds each · scored by accuracy &amp; speed
+      </p>
+      <button type="button" className="btn btn--primary" style={{ width: "100%" }} onClick={onStart}>
+        Start Quiz
+      </button>
     </div>
   );
 }
