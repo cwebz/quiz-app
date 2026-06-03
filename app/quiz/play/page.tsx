@@ -885,11 +885,14 @@ function ReportRecapButton({
 
 
 function ResultsScreen({ results }: { results: QuizResults }) {
+  // Use the player's LOCAL date, not the Worker's UTC date. For UTC- users
+  // playing between UTC midnight and local midnight (e.g. 9pm EST), forcing
+  // timeZone:"UTC" rolled the displayed/shared date to "tomorrow". Matches the
+  // home page convention (see fix 668d562).
   const today = new Date();
   const dateShort = today.toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
-    timeZone: "UTC",
   });
   const totalSec = results.totalTimeMs / 1000;
   const total = results.perQuestion.length;
