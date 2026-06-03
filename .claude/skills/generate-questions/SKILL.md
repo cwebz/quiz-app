@@ -49,6 +49,16 @@ A great bar trivia question makes the player go: *"Oh yeah, of course!"* — tha
 - Answer is straightforward and relatable
 - Could spark a conversation about tennis, feminism in sports, etc.
 
+✗ **Bad**: "How many seasons did Breaking Bad run for?" (5)
+- Memorization fact people won't naturally know
+- Like Emmy statistics, it's trivia about trivia, not the show itself
+- No one discusses "Breaking Bad has 5 seasons" — they discuss the story, characters, plot
+
+✓ **Good**: "Who played Walter White in Breaking Bad?" (Bryan Cranston)
+- About the show's star actor
+- Something people actually discuss
+- Opens conversation about the show itself
+
 ### The Difficulty Sweet Spot
 
 - **Easy questions** can be about very famous people/events but still feel worth answering (Billie Jean King, The Hunger Games)
@@ -56,6 +66,13 @@ A great bar trivia question makes the player go: *"Oh yeah, of course!"* — tha
 - **Hard questions** are obscure *within a relatable domain* — not academic knowledge, just the deeper cuts of pop culture/history that dedicated fans would know
 
 ❌ **DON'T go hard on academic/technical knowledge.** "What is the chemical formula for photosynthesis?" is not bar trivia — it's a biology exam.
+
+**Difficulty Distribution Target:**
+- **50% Easy questions**
+- **30% Medium questions**
+- **20% Hard questions**
+
+Aim for this balance across your batch. Easy questions are the foundation; medium and hard questions reward deeper knowledge.
 
 ---
 
@@ -93,6 +110,8 @@ If no topic is given, pick something timely and interesting based on today's dat
 Use web search to find 2–3 authoritative, citable sources (Wikipedia, major news outlets, official sites). Record the best source URL per question for fact-checking.
 
 **Important**: As you research, think about *what casual people might discuss* about this topic. What are the interesting facts? The surprising connections? The memorable details?
+
+**Variety is key**: If the topic is broad (like "popular TV series"), spread your questions across many different subjects, not just 4-5. For a batch of 20 questions on a broad topic, aim for 12-15+ different subjects. Repetition makes the quiz feel stale.
 
 ---
 
@@ -246,6 +265,9 @@ EOF
 
 - **Feedback is how this skill improves** — Your feedback after each generation trains the skill. Provide honest notes on what worked and what didn't. The more feedback you give, the better future questions become.
 - **The self-evaluation checklist is mandatory** — Use it on every question before showing to the user. This is where you catch questions that are too academic, poorly worded, or don't have a hook.
+- **Avoid memorization trivia** — Don't ask "How many seasons?" or "How many Emmy nominations?" These are facts about trivia, not engaging questions. Focus on content people discuss: actors, plot points, cultural moments, platforms.
+- **Variety is critical** — For broad topics, spread questions across many subjects. Don't concentrate 20 questions around 4-5 subjects. Aim for 12-15+ different subjects for a batch of 20.
+- **Difficulty distribution target**: 50% Easy / 30% Medium / 20% Hard. This balance keeps the quiz engaging without being too hard.
 - **Question wording matters more than you think** — A well-worded question about a moderately interesting fact beats a poorly-worded question about something fascinating. Invest time in the phrasing.
 - **Bar trivia > Academic trivia** — When in doubt between a relatable question and a technically correct but academic one, always pick the relatable one. Or reject both and try again.
 - **Question length is critical** — Keep question text and answers brief (1–2 sentences). Players have only 20 seconds per question and are reading on mobile devices.
