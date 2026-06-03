@@ -80,7 +80,7 @@ export async function Topbar() {
         ) : (
           <SignInButton
             label="Sign in"
-            style={{ padding: "10px 18px", fontSize: 13 }}
+            style={{ padding: "14px 18px", fontSize: 13 }}
           />
         )}
       </div>
