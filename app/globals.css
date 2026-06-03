@@ -409,6 +409,10 @@ a { color: inherit; text-decoration: none; }
 }
 .question-meta { display: flex; gap: 8px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; }
 .question-text { font-family: var(--font-display); font-weight: 600; font-size: 30px; line-height: 1.2; color: var(--ink); text-wrap: balance; }
+/* Focused programmatically on each new question (for SR announcement + to keep
+   the focus ring off the first answer). It's a heading, not a control, so no
+   visible outline. */
+.question-text:focus, .question-text:focus-visible { outline: none; }
 
 .answers { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 28px; }
 @media (max-width: 560px) {

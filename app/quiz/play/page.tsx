@@ -73,6 +73,13 @@ type CachedSession =
   | {
       date: string;
       kind: "awaiting";
+      // Full feedback snapshot so returning during the feedback screen restores
+      // the verdict + Next button instead of silently auto-advancing to the
+      // next question with a fresh timer.
+      question: PublicQuestion;
+      questionIndex: number;
+      selectedAnswer: string | null;
+      feedback: QuestionFeedback;
       advanceToken: string;
       nextIndex: number;
       totalQuestions: number;
@@ -152,15 +159,17 @@ export default function QuizPlayPage() {
 
     // 1. Hydrate immediately from cache if a session for today exists.
     //    "playing" cache: drop into the existing question with the saved
-    //    deadline. "awaiting" cache (refresh during feedback): leave UI
-    //    in loading state and redeem the advance token below.
+    //    deadline. "awaiting" cache (left during feedback): restore the
+    //    feedback screen so it isn't skipped — the next question's timer only
+    //    starts when the player taps Next (redeeming the advance token).
     //
     //    Note: cached tokens carry the identity (guestId/userId) baked in
     //    at issue time. If the caller is now signed in but the cache was
     //    written as a guest, the /today response below will drop the cache
     //    so we re-issue against the current identity.
     let cached = loadCachedSession(today);
-    let hasCachedHydration = cached?.kind === "playing";
+    let hasCachedHydration =
+      cached?.kind === "playing" || cached?.kind === "awaiting";
     if (cached?.kind === "playing") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPhase({
@@ -171,6 +180,26 @@ export default function QuizPlayPage() {
         totalQuestions: cached.totalQuestions,
         deadline: cached.deadline,
         selected: null,
+      });
+    } else if (cached?.kind === "awaiting") {
+      // Returned during the feedback screen — restore the verdict + Next button
+      // so the feedback isn't skipped and the next question's timer doesn't
+      // start until the player taps Next (matches a normal, uninterrupted run).
+      setPhase({
+        kind: "revealed",
+        question: cached.question,
+        questionIndex: cached.questionIndex,
+        totalQuestions: cached.totalQuestions,
+        answered: {
+          selectedAnswer: cached.selectedAnswer,
+          feedback: cached.feedback,
+          next: {
+            advanceToken: cached.advanceToken,
+            nextIndex: cached.nextIndex,
+            totalQuestions: cached.totalQuestions,
+          },
+          finalResults: null,
+        },
       });
     }
 
@@ -214,42 +243,10 @@ export default function QuizPlayPage() {
           hasCachedHydration = false;
         }
 
-        // Server says "ready". Decide how to enter:
-        // - "playing" cache: already hydrated, do nothing
-        // - "awaiting" cache: redeem the advance ticket → fresh timer
-        // - no cache: start a fresh session
+        // Server says "ready". Both "playing" and "awaiting" caches were
+        // hydrated synchronously above (dropped straight into the question, or
+        // into its feedback screen). Anything else means no resumable session.
         if (hasCachedHydration) return;
-        if (cached?.kind === "awaiting") {
-          const continueRes = await fetch("/api/quiz/continue", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ advanceToken: cached.advanceToken }),
-          });
-          const continueData = (await continueRes.json()) as
-            | {
-                token: string;
-                question: PublicQuestion;
-                questionIndex: number;
-                totalQuestions: number;
-              }
-            | { error: string };
-          if (aborted) return;
-          if ("error" in continueData) {
-            // Token expired / invalid — fall through to fresh start.
-            clearCachedSession();
-          } else {
-            setPhase({
-              kind: "playing",
-              token: continueData.token,
-              question: continueData.question,
-              questionIndex: continueData.questionIndex,
-              totalQuestions: continueData.totalQuestions,
-              deadline: Date.now() + QUESTION_TIME_LIMIT_MS,
-              selected: null,
-            });
-            return;
-          }
-        }
 
         // No cached session and server says "ready" — show the ready
         // screen so the quiz only starts on explicit user intent.
@@ -282,13 +279,17 @@ export default function QuizPlayPage() {
         identity: identityRef.current,
       });
     } else if (phase.kind === "revealed" && phase.answered.next) {
-      // Mid-quiz feedback. Stash the advance token so a refresh during
-      // feedback redeems it on resume (server stamps the timer THEN, not
-      // when feedback was shown).
+      // Mid-quiz feedback. Stash the full feedback snapshot so returning here
+      // restores the verdict + Next button. The next question's timer still
+      // only starts when the player taps Next and redeems the advance token.
       const next = phase.answered.next;
       saveCachedSession({
         date: today,
         kind: "awaiting",
+        question: phase.question,
+        questionIndex: phase.questionIndex,
+        selectedAnswer: phase.answered.selectedAnswer,
+        feedback: phase.answered.feedback,
         advanceToken: next.advanceToken,
         nextIndex: next.nextIndex,
         totalQuestions: next.totalQuestions,
@@ -653,6 +654,18 @@ function QuizScreen({
     return () => clearInterval(id);
   }, [deadline, onPick]);
 
+  // Move focus onto the question prompt whenever a new live question appears.
+  // Without this, iOS Safari lands the :focus-visible ring on the first answer
+  // button after the Start/Next tap, which looks like a pre-selected answer.
+  // Focusing the prompt also lets screen readers announce it. Guarded to the
+  // playing phase (deadline set) so it doesn't fire during feedback.
+  const questionRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (deadline !== null) {
+      questionRef.current?.focus({ preventScroll: true });
+    }
+  }, [deadline]);
+
   const secondsLeft = Math.ceil(remaining / 1000);
   const timerWarn = deadline !== null && secondsLeft <= 5;
   const C = 2 * Math.PI * 22;
@@ -710,7 +723,9 @@ function QuizScreen({
             Difficulty: {question.difficulty}
           </span>
         </div>
-        <div className="question-text">{question.text}</div>
+        <div className="question-text" ref={questionRef} tabIndex={-1}>
+          {question.text}
+        </div>
         <div className="answers">
           {question.options.map((opt, i) => {
             const cls = ["answer"];

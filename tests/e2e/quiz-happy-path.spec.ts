@@ -87,6 +87,48 @@ test("guest completes a full quiz and sees results", async ({ page }) => {
   await expect(page.getByText(/how everyone did today/i)).toBeVisible();
 });
 
+test("returning during feedback restores the verdict, not a fresh question", async ({
+  page,
+}) => {
+  // Regression: leaving the quiz while the post-answer feedback is showing and
+  // coming back used to silently redeem the advance token — skipping the
+  // feedback and dropping the player into the NEXT question with a fresh 20s
+  // timer (looked like "the timer reset to full"). It should instead restore
+  // the feedback + Next button so the next timer only starts on an explicit tap.
+  await page.goto("/");
+  await page.getByRole("link", { name: /start today/i }).click();
+  // Wait for the ready screen or question card before probing the Start button.
+  await expect(
+    page
+      .getByRole("button", { name: /start quiz/i })
+      .or(page.locator(".question-card")),
+  ).toBeVisible({ timeout: 15_000 });
+  const startBtn = page.getByRole("button", { name: /start quiz/i });
+  if (await startBtn.isVisible()) {
+    await startBtn.click();
+  }
+  await expect(page.locator(".question-card")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".quiz-counter")).toHaveText("1/5");
+
+  // Answer question 1 → feedback appears.
+  const answer = page.locator(".answers button:not([disabled])").first();
+  await expect(answer).toBeVisible({ timeout: 15_000 });
+  await answer.click();
+  await expect(page.locator(".feedback")).toBeVisible({ timeout: 10_000 });
+
+  // "Close" the quiz mid-feedback, then reopen it (hard nav = tab reopen).
+  await page.goto("/");
+  await page.goto("/quiz/play");
+
+  // The feedback for question 1 is restored — we are NOT on question 2.
+  await expect(page.locator(".feedback")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".quiz-counter")).toHaveText("1/5");
+
+  // Tapping Next still advances normally to question 2.
+  await page.locator(".feedback button:not([disabled])").click();
+  await expect(page.locator(".quiz-counter")).toHaveText("2/5");
+});
+
 test("returning guest sees quiz or already-played screen", async ({ page }) => {
   // Navigating to /quiz/play without a prior session either shows a fresh
   // quiz or the no-quiz screen — both are valid states for a new browser
