@@ -436,7 +436,11 @@ a { color: inherit; text-decoration: none; }
   color: var(--ink);
   transition: transform 80ms, box-shadow 80ms, border-color 120ms, background 120ms;
 }
-.answer:hover:not([disabled]) { border-color: var(--primary); }
+/* Only apply hover highlight on real pointer devices — iOS Safari gets
+   stuck in :hover after a tap, making the first answer look pre-selected. */
+@media (hover: hover) {
+  .answer:hover:not([disabled]) { border-color: var(--primary); }
+}
 .answer.selected { border-color: var(--primary); background: var(--primary-soft); }
 .answer-key {
   position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
