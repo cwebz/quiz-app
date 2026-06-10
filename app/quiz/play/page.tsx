@@ -579,7 +579,8 @@ function ReadyScreen({ totalQuestions, onStart }: { totalQuestions: number; onSt
     <div className="card" style={{ maxWidth: 520, marginTop: 40, textAlign: "center", padding: 40 }}>
       <h2 style={{ marginBottom: 8 }}>Ready for today&apos;s quiz?</h2>
       <p style={{ color: "var(--ink-soft)", fontSize: 14, marginBottom: 24 }}>
-        {totalQuestions} questions · 20 seconds each · scored by accuracy &amp; speed
+        {totalQuestions}{" "}questions · 20 seconds each · scored by accuracy{" "}
+        &amp; speed
       </p>
       <button type="button" className="btn btn--primary" style={{ width: "100%" }} onClick={onStart}>
         Start Quiz
@@ -950,7 +951,7 @@ function ResultsScreen({ results }: { results: QuizResults }) {
               </div>
               <div className="percentile-suffix">
                 Nobody scored lower than you among today&apos;s{" "}
-                {playersToday.toLocaleString()} players. There&apos;s a streak
+                {playersToday.toLocaleString()}{" "}players. There&apos;s a streak
                 waiting to happen.
               </div>
             </>
@@ -961,7 +962,7 @@ function ResultsScreen({ results }: { results: QuizResults }) {
               </div>
               <div className="percentile-suffix">
                 You scored higher than {percentile}% of today&apos;s{" "}
-                {playersToday.toLocaleString()} players. Keep going.
+                {playersToday.toLocaleString()}{" "}players. Keep going.
               </div>
             </>
           ) : (
@@ -971,7 +972,7 @@ function ResultsScreen({ results }: { results: QuizResults }) {
               </div>
               <div className="percentile-suffix">
                 You beat <strong>{percentile}%</strong> of today&apos;s{" "}
-                {playersToday.toLocaleString()} players.
+                {playersToday.toLocaleString()}{" "}players.
               </div>
             </>
           )}
