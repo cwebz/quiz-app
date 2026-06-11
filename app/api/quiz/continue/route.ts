@@ -1,5 +1,6 @@
 import { getDb, getEnv } from "@/lib/db";
 import { processContinue, QuizError } from "@/lib/quiz/play";
+import { setSessionCookie } from "@/lib/quiz/session-cookie";
 
 export async function POST(request: Request) {
   let body: { advanceToken?: string };
@@ -28,7 +29,10 @@ export async function POST(request: Request) {
       secret: env.QUIZ_TOKEN_SECRET,
       advanceToken: body.advanceToken,
     });
-    return Response.json(result);
+    // Refresh the resume cookie to the new question's session token.
+    return Response.json(result, {
+      headers: { "Set-Cookie": setSessionCookie(result.token, request) },
+    });
   } catch (err) {
     if (err instanceof QuizError) {
       const status =

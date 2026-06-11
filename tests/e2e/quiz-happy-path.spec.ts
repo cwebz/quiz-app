@@ -129,6 +129,43 @@ test("returning during feedback restores the verdict, not a fresh question", asy
   await expect(page.locator(".quiz-counter")).toHaveText("2/5");
 });
 
+test("a wiped localStorage still resumes via the session cookie (no restart)", async ({
+  page,
+}) => {
+  // iOS Safari can zero out localStorage while cookies survive. The in-progress
+  // quiz must resume from the session cookie instead of restarting at Q1 (which
+  // also burned through the /start rate limit).
+  await page.goto("/");
+  await page.getByRole("link", { name: /start today/i }).click();
+  await expect(
+    page
+      .getByRole("button", { name: /start quiz/i })
+      .or(page.locator(".question-card")),
+  ).toBeVisible({ timeout: 15_000 });
+  const startBtn = page.getByRole("button", { name: /start quiz/i });
+  if (await startBtn.isVisible()) {
+    await startBtn.click();
+  }
+  await expect(page.locator(".quiz-counter")).toHaveText("1/5", {
+    timeout: 15_000,
+  });
+
+  // Answer Q1 and advance to Q2 so a resume vs. restart is distinguishable
+  // (resume → "2/5", restart → "1/5").
+  await page.locator(".answers button:not([disabled])").first().click();
+  await page.locator(".feedback button:not([disabled])").click();
+  await expect(page.locator(".quiz-counter")).toHaveText("2/5");
+
+  // Wipe localStorage (cookies persist in the same context), then reload.
+  await page.evaluate(() => localStorage.clear());
+  await page.goto("/quiz/play");
+
+  // Auto-resumes at Q2 via the cookie — NOT a fresh restart at Q1.
+  await expect(page.locator(".quiz-counter")).toHaveText("2/5", {
+    timeout: 15_000,
+  });
+});
+
 test("returning guest sees quiz or already-played screen", async ({ page }) => {
   // Navigating to /quiz/play without a prior session either shows a fresh
   // quiz or the no-quiz screen — both are valid states for a new browser

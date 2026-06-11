@@ -96,6 +96,10 @@ export type StartResult = {
   question: PublicQuestion;
   questionIndex: number;
   totalQuestions: number;
+  /** Server's serve timestamp (ms). The client anchors the countdown to this
+   *  (deadline = servedAt + limit) so a reload/resume shows the true remaining
+   *  time and the timer can't be reset by re-entering. */
+  servedAt: number;
 };
 
 export type AnswerResult =
@@ -120,6 +124,8 @@ export type ContinueResult = {
   question: PublicQuestion;
   questionIndex: number;
   totalQuestions: number;
+  /** See StartResult.servedAt. */
+  servedAt: number;
 };
 
 export class QuizError extends Error {
@@ -161,10 +167,77 @@ export async function buildStart(opts: {
   const token = await signToken(state, opts.secret);
   return {
     token,
-    question: shuffleOptions(q),
+    question: shuffleOptions(q, state.currentServedAt),
     questionIndex: 0,
     totalQuestions: opts.questionIds.length,
+    servedAt: state.currentServedAt,
   };
+}
+
+/**
+ * Rebuild an in-progress session from a token (read from the session cookie),
+ * so a reload that lost client storage — iOS Safari zeroes localStorage under
+ * some privacy settings — resumes the SAME question instead of starting a
+ * fresh quiz. Handles both token kinds: a live session token resumes its
+ * current question (original serve time preserved, so the timer reflects
+ * elapsed time); an advance token (left on the feedback screen) is redeemed
+ * into the next question. Returns null if the token is invalid, belongs to a
+ * different identity or quiz, or is out of range.
+ */
+export async function resumeSession(opts: {
+  db: DB;
+  secret: string;
+  cookieToken: string;
+  dailyQuizId: number;
+  userId: number | null;
+  guestId: string | null;
+}): Promise<StartResult | null> {
+  // Signed-in callers must match the token's user (don't resume someone else's
+  // session after sign-in). Guests resume any guest session presented in their
+  // own first-party cookie: the guestId in localStorage is often wiped together
+  // with the session (iOS), so possession of the signed cookie is the proof of
+  // ownership — the guestId label alone isn't.
+  const identityOk = (s: { userId: number | null }) =>
+    opts.userId !== null ? s.userId === opts.userId : s.userId === null;
+
+  // Live question (playing).
+  const state = await verifyToken(opts.cookieToken, opts.secret);
+  if (state) {
+    if (state.dailyQuizId !== opts.dailyQuizId || !identityOk(state)) return null;
+    const quiz = await opts.db
+      .select()
+      .from(dailyQuizzes)
+      .where(eq(dailyQuizzes.id, state.dailyQuizId))
+      .limit(1);
+    if (quiz.length === 0) return null;
+    const questionIds = quiz[0].questionIds;
+    if (state.currentIndex < 0 || state.currentIndex >= questionIds.length) {
+      return null;
+    }
+    const q = await fetchQuestion(opts.db, state.currentQuestionId);
+    return {
+      token: opts.cookieToken,
+      question: shuffleOptions(q, state.currentServedAt),
+      questionIndex: state.currentIndex,
+      totalQuestions: questionIds.length,
+      servedAt: state.currentServedAt,
+    };
+  }
+
+  // Between questions (advance token from the feedback screen) — redeem it.
+  const advance = await verifyAdvanceToken(opts.cookieToken, opts.secret);
+  if (advance) {
+    if (advance.dailyQuizId !== opts.dailyQuizId || !identityOk(advance)) {
+      return null;
+    }
+    return await processContinue({
+      db: opts.db,
+      secret: opts.secret,
+      advanceToken: opts.cookieToken,
+    });
+  }
+
+  return null;
 }
 
 export async function processAnswer(opts: {
@@ -289,9 +362,10 @@ export async function processContinue(opts: {
 
   return {
     token,
-    question: shuffleOptions(nextQ),
+    question: shuffleOptions(nextQ, newState.currentServedAt),
     questionIndex: advance.nextIndex,
     totalQuestions: questionIds.length,
+    servedAt: newState.currentServedAt,
   };
 }
 
@@ -750,10 +824,24 @@ async function fetchQuestion(db: DB, id: number): Promise<QuestionRow> {
   return rows[0];
 }
 
-function shuffleOptions(q: QuestionRow): PublicQuestion {
+// Deterministic PRNG so a question shuffled with the same seed (its serve
+// timestamp) yields the same option order — answers don't jump around when a
+// session is resumed after a reload.
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleOptions(q: QuestionRow, seed?: number): PublicQuestion {
   const all = [q.correctAnswer, ...q.incorrectAnswers];
+  const rand = seed === undefined ? Math.random : mulberry32(seed);
   for (let i = all.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rand() * (i + 1));
     [all[i], all[j]] = [all[j], all[i]];
   }
   return {

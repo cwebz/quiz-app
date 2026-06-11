@@ -2,8 +2,13 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { dailyQuizzes } from "@/db/schema";
 import { getDb, getEnv } from "@/lib/db";
-import { buildStart, findExistingAttempt } from "@/lib/quiz/play";
+import { buildStart, findExistingAttempt, resumeSession } from "@/lib/quiz/play";
 import { getUtcDateString, resolveQuizDate } from "@/lib/quiz/select";
+import {
+  clearSessionCookie,
+  readSessionCookie,
+  setSessionCookie,
+} from "@/lib/quiz/session-cookie";
 
 export async function POST(request: Request) {
   let body: { guestId?: string; localDate?: string };
@@ -40,9 +45,49 @@ export async function POST(request: Request) {
     );
   }
 
-  // Rate limit: max 20 starts per IP per UTC day. Generous enough to cover
-  // timezone edge cases (today + tomorrow quiz) and retries; blocks bulk
-  // enumeration. Keyed by UTC date so the counter resets at UTC midnight.
+  const date = resolveQuizDate(body.localDate ?? null);
+  const quiz = await db
+    .select()
+    .from(dailyQuizzes)
+    .where(eq(dailyQuizzes.quizDate, date))
+    .limit(1);
+  if (quiz.length === 0) {
+    return Response.json({ error: "no quiz for today" }, { status: 404 });
+  }
+  const dailyQuizId = quiz[0].id;
+
+  // Already completed today → can't replay. Drop any stale session cookie.
+  const existing = await findExistingAttempt({ db, dailyQuizId, guestId, userId });
+  if (existing) {
+    return Response.json(
+      { status: "already-played", results: existing },
+      { status: 409, headers: { "Set-Cookie": clearSessionCookie(request) } },
+    );
+  }
+
+  // Resume an in-progress session from the cookie (which survives a localStorage
+  // wipe), so a reload can't start a brand-new quiz. Resumes don't count against
+  // the start rate limit.
+  const cookieToken = readSessionCookie(request);
+  if (cookieToken) {
+    const resumed = await resumeSession({
+      db,
+      secret: env.QUIZ_TOKEN_SECRET,
+      cookieToken,
+      dailyQuizId,
+      userId,
+      guestId,
+    });
+    if (resumed) {
+      return Response.json(
+        { status: "started", ...resumed },
+        { headers: { "Set-Cookie": setSessionCookie(resumed.token, request) } },
+      );
+    }
+  }
+
+  // Fresh start only. Rate limit: max 20 fresh starts per IP per UTC day —
+  // covers timezone edge cases and retries while blocking bulk enumeration.
   if (env.QUIZ_KV) {
     const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
     const rlKey = `rate:start:${ip}:${getUtcDateString()}`;
@@ -53,37 +98,17 @@ export async function POST(request: Request) {
     await env.QUIZ_KV.put(rlKey, String(count + 1), { expirationTtl: 172800 });
   }
 
-  const date = resolveQuizDate(body.localDate ?? null);
-  const quiz = await db
-    .select()
-    .from(dailyQuizzes)
-    .where(eq(dailyQuizzes.quizDate, date))
-    .limit(1);
-  if (quiz.length === 0) {
-    return Response.json({ error: "no quiz for today" }, { status: 404 });
-  }
-
-  const existing = await findExistingAttempt({
-    db,
-    dailyQuizId: quiz[0].id,
-    guestId,
-    userId,
-  });
-  if (existing) {
-    return Response.json(
-      { status: "already-played", results: existing },
-      { status: 409 },
-    );
-  }
-
   const start = await buildStart({
     db,
     secret: env.QUIZ_TOKEN_SECRET,
-    dailyQuizId: quiz[0].id,
+    dailyQuizId,
     questionIds: quiz[0].questionIds,
     guestId,
     userId,
   });
 
-  return Response.json({ status: "started", ...start });
+  return Response.json(
+    { status: "started", ...start },
+    { headers: { "Set-Cookie": setSessionCookie(start.token, request) } },
+  );
 }

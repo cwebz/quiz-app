@@ -1,5 +1,9 @@
 import { getDb, getEnv } from "@/lib/db";
 import { processAnswer, QuizError } from "@/lib/quiz/play";
+import {
+  clearSessionCookie,
+  setSessionCookie,
+} from "@/lib/quiz/session-cookie";
 
 export async function POST(request: Request) {
   const receivedAt = Date.now();
@@ -49,7 +53,13 @@ export async function POST(request: Request) {
       userAnswer: body.answer,
       receivedAt,
     });
-    return Response.json(result);
+    // Keep the resume cookie current: advance token while between questions,
+    // cleared once the quiz is complete.
+    const cookie =
+      result.kind === "next"
+        ? setSessionCookie(result.advanceToken, request)
+        : clearSessionCookie(request);
+    return Response.json(result, { headers: { "Set-Cookie": cookie } });
   } catch (err) {
     if (err instanceof QuizError) {
       const status =

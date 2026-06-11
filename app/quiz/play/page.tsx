@@ -35,7 +35,7 @@ type AnsweredState = {
 type Phase =
   | { kind: "loading" }
   | { kind: "no-quiz"; date: string }
-  | { kind: "ready"; totalQuestions: number }
+  | { kind: "ready"; totalQuestions: number; autoResume?: boolean }
   | {
       kind: "playing";
       token: string;
@@ -248,9 +248,19 @@ export default function QuizPlayPage() {
         // into its feedback screen). Anything else means no resumable session.
         if (hasCachedHydration) return;
 
-        // No cached session and server says "ready" — show the ready
+        // No cached session and server says "ready". If a session cookie is
+        // present, an in-progress quiz exists server-side (localStorage was
+        // wiped — common on iOS) — auto-resume it instead of offering a fresh
+        // start, so a reload can't restart the quiz. Otherwise show the ready
         // screen so the quiz only starts on explicit user intent.
-        setPhase({ kind: "ready", totalQuestions: todayData.totalQuestions });
+        const hasSessionCookie =
+          typeof document !== "undefined" &&
+          document.cookie.includes("stti.qs=");
+        setPhase({
+          kind: "ready",
+          totalQuestions: todayData.totalQuestions,
+          autoResume: hasSessionCookie,
+        });
       } catch (err) {
         if (!aborted) {
           setPhase({ kind: "error", message: String(err) });
@@ -404,6 +414,7 @@ export default function QuizPlayPage() {
             question: PublicQuestion;
             questionIndex: number;
             totalQuestions: number;
+            servedAt: number;
           }
         | { error: string };
       if ("error" in data) {
@@ -416,7 +427,9 @@ export default function QuizPlayPage() {
         question: data.question,
         questionIndex: data.questionIndex,
         totalQuestions: data.totalQuestions,
-        deadline: Date.now() + QUESTION_TIME_LIMIT_MS,
+        // Anchor the countdown to the server's serve time, not the client clock,
+        // so a resumed question shows the true remaining time.
+        deadline: data.servedAt + QUESTION_TIME_LIMIT_MS,
         selected: null,
       });
     } catch (err) {
@@ -454,7 +467,9 @@ export default function QuizPlayPage() {
         question: startData.question,
         questionIndex: startData.questionIndex,
         totalQuestions: startData.totalQuestions,
-        deadline: Date.now() + QUESTION_TIME_LIMIT_MS,
+        // Server-anchored deadline: on a cookie-resumed start this reflects the
+        // already-elapsed time instead of a fresh 20s.
+        deadline: startData.servedAt + QUESTION_TIME_LIMIT_MS,
         selected: null,
       });
     } catch (err) {
@@ -476,6 +491,7 @@ export default function QuizPlayPage() {
       <ReadyScreen
         totalQuestions={phase.totalQuestions}
         onStart={startQuiz}
+        autoResume={phase.autoResume ?? false}
       />
     );
   }
@@ -574,7 +590,36 @@ function NoQuizScreen({ date }: { date: string }) {
   );
 }
 
-function ReadyScreen({ totalQuestions, onStart }: { totalQuestions: number; onStart: () => void }) {
+function ReadyScreen({
+  totalQuestions,
+  onStart,
+  autoResume,
+}: {
+  totalQuestions: number;
+  onStart: () => void;
+  autoResume: boolean;
+}) {
+  // An in-progress session cookie exists (localStorage was wiped) — resume it
+  // immediately rather than offering a fresh start, so a reload can't restart.
+  const fired = useRef(false);
+  useEffect(() => {
+    if (autoResume && !fired.current) {
+      fired.current = true;
+      onStart();
+    }
+  }, [autoResume, onStart]);
+
+  if (autoResume) {
+    return (
+      <div className="card" style={{ maxWidth: 520, marginTop: 40, textAlign: "center", padding: 40 }}>
+        <h2 style={{ marginBottom: 8 }}>Resuming your quiz…</h2>
+        <p style={{ color: "var(--ink-soft)", fontSize: 14 }}>
+          Picking up right where you left off.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="card" style={{ maxWidth: 520, marginTop: 40, textAlign: "center", padding: 40 }}>
       <h2 style={{ marginBottom: 8 }}>Ready for today&apos;s quiz?</h2>
