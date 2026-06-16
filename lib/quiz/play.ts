@@ -76,6 +76,14 @@ export type QuizResults = {
     perfectScores: number;
     comebackEarned: boolean;
   };
+  /** Category closest to its next mastery tier (auth only); drives a progress
+   *  nudge on the results screen. Undefined for guests or maxed-out users. */
+  masteryProgress?: {
+    category: string;
+    correct: number;
+    tier: "Bronze" | "Silver" | "Gold" | "Master";
+    threshold: number;
+  };
   /** True when a weekly freeze auto-applied to preserve the user's streak. */
   freezeApplied?: boolean;
   /** True the first time ever a freeze saved this user's streak. */
@@ -719,6 +727,62 @@ async function loadResults(
     }
   }
 
+  // Closest category to its next mastery tier, used as a results progress nudge.
+  // Mastery counts already include today's quiz (updateCategoryMastery runs in
+  // persistComplete before loadResults).
+  let masteryProgress: QuizResults["masteryProgress"];
+  if (userId !== null) {
+    const masteryRows = await db
+      .select({
+        category: categoryMastery.category,
+        correct: categoryMastery.questionsCorrect,
+      })
+      .from(categoryMastery)
+      .where(eq(categoryMastery.userId, userId));
+    const TIERS = [
+      { name: "Bronze", n: 10 },
+      { name: "Silver", n: 25 },
+      { name: "Gold", n: 50 },
+      { name: "Master", n: 100 },
+    ] as const;
+    let best:
+      | {
+          category: string;
+          correct: number;
+          name: (typeof TIERS)[number]["name"];
+          threshold: number;
+          remaining: number;
+        }
+      | null = null;
+    for (const m of masteryRows) {
+      if (m.correct < 1) continue;
+      const tier = TIERS.find((t) => m.correct < t.n);
+      if (!tier) continue; // already at Master (100+)
+      const remaining = tier.n - m.correct;
+      if (
+        !best ||
+        remaining < best.remaining ||
+        (remaining === best.remaining && m.correct > best.correct)
+      ) {
+        best = {
+          category: m.category,
+          correct: m.correct,
+          name: tier.name,
+          threshold: tier.n,
+          remaining,
+        };
+      }
+    }
+    if (best) {
+      masteryProgress = {
+        category: best.category,
+        correct: best.correct,
+        tier: best.name,
+        threshold: best.threshold,
+      };
+    }
+  }
+
   return {
     attemptId,
     userId,
@@ -730,6 +794,7 @@ async function loadResults(
     scoreDistribution,
     friendsToday,
     userStreak,
+    masteryProgress,
     freezeApplied: freezeData.freezeApplied || undefined,
     comebackJustEarned: freezeData.comebackJustEarned || undefined,
     perQuestion: answered.map((a) => {

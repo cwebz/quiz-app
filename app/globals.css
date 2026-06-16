@@ -241,6 +241,9 @@ a { color: inherit; text-decoration: none; }
 .btn:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--primary-dark); }
 
 .btn--lg { padding: 18px 36px; font-size: 18px; }
+/* Slimmer button: smaller label + height for secondary actions that still
+   want full width (e.g. the share-card copy button). */
+.btn--slim { padding: 11px 20px; font-size: 14px; }
 .btn--xl { padding: 22px 48px; font-size: 22px; border-radius: 22px; box-shadow: 0 7px 0 var(--primary-dark); }
 .btn--xl:active { transform: translateY(5px); box-shadow: 0 2px 0 var(--primary-dark); }
 
@@ -530,9 +533,14 @@ a { color: inherit; text-decoration: none; }
    visual containment without decoration. */
 .results-hero > * { position: relative; }
 .percentile-eyebrow { color: var(--primary-dark); font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 13px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-.percentile-num { font-family: var(--font-display); font-weight: 700; font-size: clamp(72px, 11vw, 110px); line-height: 0.95; color: var(--ink); letter-spacing: -0.04em; }
+.percentile-num { font-family: var(--font-display); font-weight: 700; font-size: clamp(46px, 13vw, 110px); line-height: 0.95; color: var(--ink); letter-spacing: -0.04em; }
 .percentile-num em { font-style: normal; color: var(--primary); }
 .percentile-suffix { font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--ink-soft); margin-top: 8px; max-width: 320px; }
+/* Score column: the ring with its stat chips. Sits to the right of the
+   headline/suffix on desktop; becomes a ring-left / chips-right row on mobile
+   so the chips fill the space beside the ring instead of leaving it blank. */
+.rh-score { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.rh-chips { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
 .score-ring { position: relative; }
 .score-ring svg { transform: rotate(-90deg); }
@@ -569,8 +577,14 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 720px) {
   .signin-card { grid-template-columns: auto 1fr; }
   .signin-card .btn-google { grid-column: 1 / -1; }
-  .results-hero { grid-template-columns: 1fr; }
-  .results-hero .score-ring { margin: 0 auto; }
+  /* Hero stacks: headline/suffix on top (full width), then the score column
+     reflows to ring-left / chips-right so no space is wasted beside the ring. */
+  .results-hero { grid-template-columns: 1fr; padding: 24px 20px; gap: 18px; }
+  .rh-score { flex-direction: row; align-items: center; justify-content: flex-start; gap: 18px; }
+  .rh-chips { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 8px; }
+  .percentile-suffix { font-size: 15px; max-width: none; margin-top: 6px; line-height: 1.4; }
+  .results { gap: 16px; }
+  .results-top { gap: 14px; }
 }
 
 .recap-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
@@ -635,6 +649,22 @@ a { color: inherit; text-decoration: none; }
 .badge.silver .badge-medal { background: #C8CDD8; border-color: #6E7686; color: #2C3142; }
 .badge-name { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
 .badge-desc { font-size: 12px; color: var(--ink-soft); line-height: 1.35; }
+
+/* Compact results badge strip: 3-up small badges. Earned today (gold/master),
+   then near-miss / progress (soft) with a count bar. The full catalog with
+   locked states lives on the profile page, so results stays small and honest. */
+.badges-mini-card { padding: 18px 20px 20px; }
+.badge-mini-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+.badge-mini-subhead { font-family: var(--font-display); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-mute); margin-top: 16px; }
+.badge-mini { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; background: var(--surface); border: 2px solid var(--hairline); border-bottom-width: 3px; border-radius: var(--r-md); padding: 12px 8px; }
+.badge-mini-medal { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; background: var(--yellow); border: 2px solid var(--yellow-dark); color: #5C3D00; }
+.badge-mini.master .badge-mini-medal { background: var(--primary); border-color: var(--ink); color: #fff; }
+.badge-mini.soft { background: var(--bg-card); }
+.badge-mini.soft .badge-mini-medal { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+.badge-mini-name { font-family: var(--font-display); font-weight: 700; font-size: 13px; color: var(--ink); line-height: 1.1; }
+.badge-mini-desc { font-size: 10.5px; color: var(--ink-soft); line-height: 1.25; }
+.badge-mini-bar { width: 100%; height: 4px; border-radius: 999px; background: var(--hairline); overflow: hidden; margin-top: 2px; }
+.badge-mini-bar > span { display: block; height: 100%; background: var(--primary); border-radius: 999px; }
 
 /* ------------------- Profile / Stats ------------------- */
 .stats-shell { width: 100%; max-width: 980px; display: flex; flex-direction: column; gap: 22px; }

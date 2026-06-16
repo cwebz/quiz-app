@@ -18,7 +18,10 @@ export function ScoreRing({
   const numFontPx = compact ? Math.round(size * 0.32) : 56;
   const spanFontPx = compact ? Math.round(size * 0.2) : 28;
   const labelFontPx = compact ? Math.round(size * 0.1) : 12;
-  const showLabel = size >= 100;
+  // Only the full-size ring shows the "CORRECT" label. On compact rings the
+  // label collides with the arc stroke (the "t" clips), and the "x/5" reads
+  // clearly on its own — the results hero already has a "x/5 correct" chip.
+  const showLabel = !compact;
 
   return (
     <div className="score-ring" style={{ width: size, height: size }}>

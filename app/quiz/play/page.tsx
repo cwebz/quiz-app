@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { ConfettiBurst } from "@/components/ConfettiBurst";
 import { FriendsLeaderboard } from "@/components/FriendsLeaderboard";
 import { Ico } from "@/components/Icons";
@@ -962,11 +962,23 @@ function ResultsScreen({ results }: { results: QuizResults }) {
   const playersToday = results.totalPlayersToday;
   const distribution = results.scoreDistribution;
 
+  // Shrink the score ring on phones so the hero doesn't stack a 200px circle
+  // below the copy. Safe to read window here: ResultsScreen only mounts after
+  // the quiz completes client-side, never during SSR.
+  const [ringSize, setRingSize] = useState(200);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 720px)");
+    const apply = () => setRingSize(mq.matches ? 104 : 200);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
   return (
     <div className="results">
       <div className="results-hero">
         <ConfettiBurst count={26} />
-        <div>
+        <div className="rh-text">
           <div className="percentile-eyebrow">
             <span
               style={{
@@ -992,12 +1004,12 @@ function ResultsScreen({ results }: { results: QuizResults }) {
           ) : percentile === 0 ? (
             <>
               <div className="percentile-num">
-                <em>0%</em>
+                <em>You&apos;re in!</em>
               </div>
               <div className="percentile-suffix">
-                Nobody scored lower than you among today&apos;s{" "}
-                {playersToday.toLocaleString()}{" "}players. There&apos;s a streak
-                waiting to happen.
+                Among today&apos;s {playersToday.toLocaleString()} players,
+                you&apos;ve got room to climb. Come back tomorrow to start a
+                streak.
               </div>
             </>
           ) : percentile < 50 ? (
@@ -1021,27 +1033,16 @@ function ResultsScreen({ results }: { results: QuizResults }) {
               </div>
             </>
           )}
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              marginTop: 16,
-              flexWrap: "wrap",
-            }}
-          >
+        </div>
+        <div className="rh-score">
+          <ScoreRing score={correct} total={total} size={ringSize} />
+          <div className="rh-chips">
             <span
               className="chip chip--yellow"
               style={{ fontSize: 13, padding: "6px 12px" }}
             >
               <Ico.Bolt style={{ width: 14, height: 14 }} />{" "}
               {totalSec.toFixed(1)}s total
-            </span>
-            <span
-              className="chip chip--mint"
-              style={{ fontSize: 13, padding: "6px 12px" }}
-            >
-              <Ico.Check style={{ width: 14, height: 14 }} /> {correct}/{total}{" "}
-              correct
             </span>
             <span
               className="chip chip--ghost"
@@ -1051,7 +1052,6 @@ function ResultsScreen({ results }: { results: QuizResults }) {
             </span>
           </div>
         </div>
-        <ScoreRing score={correct} total={total} size={200} />
       </div>
 
       <div className="results-top">
@@ -1077,6 +1077,8 @@ function ResultsScreen({ results }: { results: QuizResults }) {
         totalSec={totalSec}
         percentile={percentile}
         perfectScores={results.userStreak?.perfectScores}
+        currentStreak={results.userStreak?.current}
+        mastery={results.masteryProgress}
         comebackJustEarned={results.comebackJustEarned}
         freezeApplied={results.freezeApplied}
       />
@@ -1326,11 +1328,11 @@ function ShareCard({
       <div className="share-row">
         <button
           type="button"
-          className="btn btn--pink"
+          className="btn btn--pink btn--slim"
           style={{ flex: 1 }}
           onClick={handleCopy}
         >
-          <Ico.Share style={{ width: 16, height: 16 }} />
+          <Ico.Share style={{ width: 14, height: 14 }} />
           {copied ? "Copied!" : "Copy share text"}
         </button>
       </div>
@@ -1345,6 +1347,8 @@ function BadgesStrip({
   totalSec,
   percentile,
   perfectScores,
+  currentStreak,
+  mastery,
   comebackJustEarned,
   freezeApplied,
 }: {
@@ -1354,6 +1358,13 @@ function BadgesStrip({
   totalSec: number;
   percentile: number;
   perfectScores?: number;
+  currentStreak?: number;
+  mastery?: {
+    category: string;
+    correct: number;
+    tier: string;
+    threshold: number;
+  };
   comebackJustEarned?: boolean;
   freezeApplied?: boolean;
 }) {
@@ -1365,11 +1376,89 @@ function BadgesStrip({
   const perfectionist = (perfectScores ?? 0) >= 10;
   const signedIn = perfectScores !== undefined;
 
+  const streak = currentStreak ?? 0;
+  const im = { width: 18, height: 18 };
+
+  type Item = {
+    key: string;
+    name: string;
+    icon: ReactNode;
+    desc: string;
+    variant: "gold" | "master" | "soft";
+    pct?: number;
+  };
+
+  // Earned today (most impressive first).
+  const earned: Item[] = [];
+  if (lightning)
+    earned.push({ key: "lightning", name: "Lightning", icon: <Ico.Bolt style={im} />, variant: "master", desc: `${finalScore} pts` });
+  else if (speedDemon)
+    earned.push({ key: "speed", name: "Speed Demon", icon: <Ico.Bolt style={im} />, variant: "gold", desc: `${total}/${total} · ${totalSec.toFixed(0)}s` });
+  if (perfect)
+    earned.push({ key: "perfect", name: "Perfect", icon: <Ico.Check style={im} />, variant: "gold", desc: "5/5 correct" });
+  if (top1)
+    earned.push({ key: "top1", name: "Top 1%", icon: <Ico.Trophy style={im} />, variant: "master", desc: "Today's standing" });
+  else if (top10)
+    earned.push({ key: "top10", name: "Top 10%", icon: <Ico.Trophy style={im} />, variant: "gold", desc: "Today's standing" });
+  if (comebackJustEarned)
+    earned.push({ key: "comeback", name: "Comeback", icon: <Ico.Fire style={im} />, variant: "gold", desc: "Freeze saved your streak" });
+  if (perfectionist)
+    earned.push({ key: "perfectionist", name: "Perfectionist", icon: <Ico.Brain style={im} />, variant: "gold", desc: "10 perfect scores" });
+
+  // Near-misses: only genuinely close, with specific progress.
+  const near: Item[] = [];
+  if (!perfect && correct === total - 1)
+    near.push({ key: "perfect", name: "Perfect", icon: <Ico.Check style={im} />, variant: "soft", desc: `1 away, you got ${correct}/${total}` });
+  if (!top10 && percentile >= 75 && percentile < 90)
+    near.push({ key: "top10", name: "Top 10%", icon: <Ico.Trophy style={im} />, variant: "soft", desc: `So close: top ${100 - percentile}% today` });
+  if (perfect && !lightning && finalScore >= 900 && finalScore < 950)
+    near.push({ key: "lightning", name: "Lightning", icon: <Ico.Bolt style={im} />, variant: "soft", desc: `${finalScore} pts, need 950` });
+  else if (perfect && !speedDemon && finalScore >= 800 && finalScore < 900)
+    near.push({ key: "speed", name: "Speed Demon", icon: <Ico.Bolt style={im} />, variant: "soft", desc: `${finalScore} pts, need 900` });
+  if (signedIn && !perfectionist && (perfectScores ?? 0) >= 7)
+    near.push({ key: "perfectionist", name: "Perfectionist", icon: <Ico.Brain style={im} />, variant: "soft", desc: `${perfectScores}/10 perfect scores`, pct: (perfectScores ?? 0) / 10 });
+
+  // Progress fallback (signed-in only): current standing toward longer-arc
+  // badges, used to fill the row when nothing was earned or barely missed.
+  const progress: Item[] = [];
+  if (signedIn) {
+    const tier = [
+      { n: 7, name: "Week One" },
+      { n: 30, name: "Month Strong" },
+      { n: 100, name: "Centurion" },
+    ].find((t) => streak < t.n);
+    if (tier)
+      progress.push({ key: "streak", name: tier.name, icon: <Ico.Fire style={im} />, variant: "soft", desc: `${streak}/${tier.n} day streak`, pct: streak / tier.n });
+    if (mastery)
+      progress.push({ key: "mastery", name: prettyCategory(mastery.category), icon: <Ico.Brain style={im} />, variant: "soft", desc: `${mastery.correct}/${mastery.threshold} to ${mastery.tier}`, pct: mastery.correct / mastery.threshold });
+    if (!perfectionist && (perfectScores ?? 0) < 7)
+      progress.push({ key: "perfectionist", name: "Perfectionist", icon: <Ico.Brain style={im} />, variant: "soft", desc: `${perfectScores}/10 perfect`, pct: (perfectScores ?? 0) / 10 });
+  }
+
+  // Secondary row: near-misses first, then progress fills toward 3 (deduped).
+  const seen = new Set(near.map((i) => i.key));
+  const secondary = [...near, ...progress.filter((i) => !seen.has(i.key))].slice(0, 3);
+
+  if (earned.length === 0 && secondary.length === 0 && !freezeApplied) {
+    return null;
+  }
+
+  const hasEarned = earned.length > 0;
+  const renderItem = (b: Item) => (
+    <div className={`badge-mini ${b.variant}`} key={b.key}>
+      <span className="badge-mini-medal">{b.icon}</span>
+      <span className="badge-mini-name">{b.name}</span>
+      <span className="badge-mini-desc">{b.desc}</span>
+      {b.pct !== undefined && (
+        <span className="badge-mini-bar">
+          <span style={{ width: `${Math.min(100, Math.round(b.pct * 100))}%` }} />
+        </span>
+      )}
+    </div>
+  );
+
   return (
-    <div className="card badges-strip-card">
-      <div className="row between">
-        <h3>Badges earned today</h3>
-      </div>
+    <div className="card badges-mini-card">
       {freezeApplied && (
         <div
           className="chip chip--yellow"
@@ -1381,74 +1470,26 @@ function BadgesStrip({
             : "Freeze used: streak preserved."}
         </div>
       )}
-      <div className="badges-strip">
-        <div className={`badge ${perfect ? "gold" : "locked"}`}>
-          <div className="badge-medal">
-            <Ico.Check style={{ width: 28, height: 28 }} />
-          </div>
-          <div className="badge-name">Perfect</div>
-          <div className="badge-desc">{perfect ? "5/5 correct" : "Score 5/5"}</div>
-        </div>
-        <div className={`badge ${speedDemon ? "gold" : "locked"}`}>
-          <div className="badge-medal">
-            <Ico.Bolt style={{ width: 30, height: 30 }} />
-          </div>
-          <div className="badge-name">Speed Demon</div>
-          <div className="badge-desc">
-            {speedDemon
-              ? `${total}/${total} · ${totalSec.toFixed(0)}s`
-              : "5/5 + 900 pts"}
-          </div>
-        </div>
-        <div className={`badge ${lightning ? "master" : "locked"}`}>
-          <div className="badge-medal">
-            <Ico.Bolt style={{ width: 30, height: 30 }} />
-          </div>
-          <div className="badge-name">Lightning</div>
-          <div className="badge-desc">
-            {lightning ? `${finalScore} pts` : "5/5 + 950 pts"}
-          </div>
-        </div>
-        <div className={`badge ${top1 ? "master" : top10 ? "gold" : "locked"}`}>
-          <div className="badge-medal">
-            <Ico.Trophy style={{ width: 28, height: 28 }} />
-          </div>
-          <div className="badge-name">{top1 ? "Top 1%" : "Top 10%"}</div>
-          <div className="badge-desc">
-            {top10 ? "Today's standing" : "Finish in top 10%"}
-          </div>
-        </div>
-        <div
-          className={`badge ${comebackJustEarned ? "gold" : signedIn ? "locked" : "locked"}`}
-        >
-          <div className="badge-medal">
-            <Ico.Fire style={{ width: 26, height: 26 }} />
-          </div>
-          <div className="badge-name">Comeback</div>
-          <div className="badge-desc">
-            {comebackJustEarned
-              ? "Freeze saved your streak!"
-              : signedIn
-                ? "Freeze saves a streak"
-                : "Sign in to track"}
-          </div>
-        </div>
-        <div
-          className={`badge ${perfectionist ? "gold" : signedIn ? "locked" : "locked"}`}
-        >
-          <div className="badge-medal">
-            <Ico.Brain style={{ width: 28, height: 28 }} />
-          </div>
-          <div className="badge-name">Perfectionist</div>
-          <div className="badge-desc">
-            {signedIn
-              ? perfectionist
-                ? "10 perfect scores"
-                : `${perfectScores}/10 perfect scores`
-              : "Sign in to track"}
-          </div>
-        </div>
-      </div>
+      {hasEarned && (
+        <>
+          <h3>Badges earned today</h3>
+          <div className="badge-mini-row">{earned.map(renderItem)}</div>
+        </>
+      )}
+      {secondary.length > 0 &&
+        (hasEarned ? (
+          <>
+            <div className="badge-mini-subhead">
+              {near.length > 0 ? "Almost there" : "On your way"}
+            </div>
+            <div className="badge-mini-row">{secondary.map(renderItem)}</div>
+          </>
+        ) : (
+          <>
+            <h3>{near.length > 0 ? "So close" : "Badge progress"}</h3>
+            <div className="badge-mini-row">{secondary.map(renderItem)}</div>
+          </>
+        ))}
     </div>
   );
 }
@@ -1457,4 +1498,14 @@ function BadgesStrip({
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ");
+}
+
+// "film_and_tv" -> "Film & TV", "society_and_culture" -> "Society & Culture"
+function prettyCategory(c: string): string {
+  return c
+    .split("_")
+    .map((w) =>
+      w === "and" ? "&" : w === "tv" ? "TV" : w.charAt(0).toUpperCase() + w.slice(1),
+    )
+    .join(" ");
 }

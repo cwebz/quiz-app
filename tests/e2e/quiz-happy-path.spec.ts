@@ -67,8 +67,9 @@ test("guest completes a full quiz and sees results", async ({ page }) => {
   // Results hero section visible.
   await expect(page.locator(".results-hero")).toBeVisible();
 
-  // Score chip present (e.g. "3/5 correct").
-  await expect(page.locator(".chip").filter({ hasText: /correct/ })).toBeVisible();
+  // The score ring shows the correct count out of total (e.g. "3/5"). This
+  // replaced the separate "x/5 correct" chip in the results-hero redesign.
+  await expect(page.locator(".score-ring-num")).toContainText("/5");
 
   // Points chip present (e.g. "720 pts").
   await expect(page.locator(".chip").filter({ hasText: /pts/ })).toBeVisible();
@@ -78,10 +79,9 @@ test("guest completes a full quiz and sees results", async ({ page }) => {
     page.getByRole("button", { name: /copy share text/i }),
   ).toBeVisible();
 
-  // Badges strip present (Phase 4).
-  await expect(
-    page.getByRole("heading", { name: /badges earned today/i }),
-  ).toBeVisible();
+  // Note: the badges section is now conditional (only earned / near-miss /
+  // progress badges render), so a guest with an arbitrary score may show no
+  // badges card. It's intentionally not asserted here.
 
   // Histogram present.
   await expect(page.getByText(/how everyone did today/i)).toBeVisible();
