@@ -159,6 +159,7 @@ Uneven pool distribution (~80–262 questions per category). Stratified sampling
 | `npm run db:local` | Apply migrations to local D1 |
 | `npm run db:prod` | Apply migrations to production D1 |
 | `npm run db:studio` | Drizzle Studio (browse local DB) |
+| `npm run db:resync` | Mirror prod's `questions` table into local D1 (prod drifts: `/generate-questions` + moderation write straight to prod). Questions-only; preserves local play data; prints parity check. |
 | `npm run seed` | Seed questions (runs `scripts/seed-questions.ts` via tsx) |
 | `npm run test:e2e` | Playwright end-to-end tests |
 

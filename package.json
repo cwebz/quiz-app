@@ -13,6 +13,7 @@
     "db:local": "wrangler d1 migrations apply smarter-than-the-internet --local",
     "db:prod": "wrangler d1 migrations apply smarter-than-the-internet --remote",
     "db:studio": "drizzle-kit studio",
+    "db:resync": "tsx scripts/db-resync.ts",
     "seed": "tsx scripts/seed-questions.ts",
     "test:e2e": "playwright test"
   },
