@@ -6,19 +6,22 @@ import { usePathname } from "next/navigation";
 export function TopnavLinks({
   showAdmin,
   showLeaderboard,
+  playedToday,
 }: {
   showAdmin: boolean;
   showLeaderboard: boolean;
+  playedToday: boolean;
 }) {
   const pathname = usePathname() ?? "/";
   const isToday = pathname === "/" || pathname.startsWith("/quiz");
+  const todayHref = playedToday ? "/quiz/play" : "/";
   const isProfile = pathname.startsWith("/profile");
   const isLeaderboard = pathname.startsWith("/leaderboard");
   const isAdminPath = pathname.startsWith("/admin");
 
   return (
     <nav className="topnav">
-      <Link href="/" className={isToday ? "active" : ""}>
+      <Link href={todayHref} className={isToday ? "active" : ""}>
         Today
       </Link>
       {showLeaderboard && (
