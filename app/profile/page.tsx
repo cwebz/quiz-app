@@ -347,7 +347,7 @@ export default async function ProfilePage() {
         <CategoryBarsCollapsible categories={profile.categories} />
       </div>
 
-      <div className="card">
+      <div className="card" id="badges" style={{ scrollMarginTop: 80 }}>
         <div className="section-h" style={{}}>Badges</div>
         <BadgesCollapsible badges={buildBadges(profile)} />
       </div>

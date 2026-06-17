@@ -1506,6 +1506,17 @@ function BadgesStrip({
             <div className="badge-mini-row">{secondary.map(renderItem)}</div>
           </>
         ))}
+      {signedIn && (
+        <div className="row between" style={{ marginTop: 14 }}>
+          <span />
+          <Link
+            href="/profile#badges"
+            style={{ fontSize: 13, color: "var(--primary)" }}
+          >
+            View all badges →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

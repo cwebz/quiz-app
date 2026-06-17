@@ -8,15 +8,18 @@ import { Ico } from "./Icons";
 export function MobileNavMenu({
   showAdmin,
   showLeaderboard,
+  playedToday,
 }: {
   showAdmin: boolean;
   showLeaderboard: boolean;
+  playedToday: boolean;
 }) {
   const pathname = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const isToday = pathname === "/" || pathname.startsWith("/quiz");
+  const todayHref = playedToday ? "/quiz/play" : "/";
   const isProfile = pathname.startsWith("/profile");
   const isLeaderboard = pathname.startsWith("/leaderboard");
   const isAdminPath = pathname.startsWith("/admin");
@@ -58,7 +61,7 @@ export function MobileNavMenu({
           role="menu"
         >
           <Link
-            href="/"
+            href={todayHref}
             role="menuitem"
             className={isToday ? "active" : ""}
             onClick={close}
