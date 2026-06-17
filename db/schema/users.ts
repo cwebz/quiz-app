@@ -25,6 +25,7 @@ export const userStats = sqliteTable("user_stats", {
   totalQuizzes: integer("total_quizzes").notNull().default(0),
   totalCorrect: integer("total_correct").notNull().default(0),
   lifetimeScore: integer("lifetime_score").notNull().default(0),
+  bestScore: integer("best_score").notNull().default(0),
   lastPlayedDate: text("last_played_date"),
   freezesUsedThisWeek: integer("freezes_used_this_week").notNull().default(0),
   weekStartDate: text("week_start_date"),

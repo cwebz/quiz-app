@@ -84,6 +84,9 @@ export type QuizResults = {
     tier: "Bronze" | "Silver" | "Gold" | "Master";
     threshold: number;
   };
+  /** All-time best point score (auth only) and whether this quiz set a new
+   *  record. `isNew` is false on a player's very first quiz. */
+  personalBest?: { score: number; isNew: boolean };
   /** True when a weekly freeze auto-applied to preserve the user's streak. */
   freezeApplied?: boolean;
   /** True the first time ever a freeze saved this user's streak. */
@@ -477,8 +480,9 @@ async function persistComplete(opts: {
   // (Per PRD §15 guest → account merge is deferred to v2.)
   let freezeApplied = false;
   let comebackJustEarned = false;
+  let isNewBest = false;
   if (state.userId !== null) {
-    ({ freezeApplied, comebackJustEarned } = await updateUserStats(
+    ({ freezeApplied, comebackJustEarned, isNewBest } = await updateUserStats(
       db,
       state.userId,
       correct,
@@ -495,7 +499,7 @@ async function persistComplete(opts: {
     final,
     state.userId,
     state.answered,
-    { freezeApplied, comebackJustEarned },
+    { freezeApplied, comebackJustEarned, isNewBest },
   );
 }
 
@@ -517,7 +521,12 @@ async function updateUserStats(
   // Streak math keys today/yesterday off this string, so piping request
   // input here would allow streak-padding attacks.
   quizDateFromDb: string,
-): Promise<{ freezeApplied: boolean; comebackJustEarned: boolean }> {
+): Promise<{
+  freezeApplied: boolean;
+  comebackJustEarned: boolean;
+  bestScore: number;
+  isNewBest: boolean;
+}> {
   const today = quizDateFromDb;
   const d = new Date(`${quizDateFromDb}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - 1);
@@ -538,11 +547,19 @@ async function updateUserStats(
       totalQuizzes: 1,
       totalCorrect: correctOnQuiz,
       lifetimeScore: finalScoreValue,
+      bestScore: finalScoreValue,
       lastPlayedDate: today,
       perfectScores: correctOnQuiz === 5 ? 1 : 0,
       weekStartDate: currentMonday,
     });
-    return { freezeApplied: false, comebackJustEarned: false };
+    // First quiz ever: it's their best by default, but there's nothing to
+    // "beat" yet, so don't fire the new-record celebration.
+    return {
+      freezeApplied: false,
+      comebackJustEarned: false,
+      bestScore: finalScoreValue,
+      isNewBest: false,
+    };
   }
 
   // Reset weekly freeze counter when a new ISO week starts.
@@ -567,6 +584,8 @@ async function updateUserStats(
 
   const newLongest = Math.max(existing.longestStreak, newStreak);
   const comebackJustEarned = freezeApplied && !existing.comebackEarned;
+  const isNewBest = finalScoreValue > existing.bestScore;
+  const newBest = Math.max(existing.bestScore, finalScoreValue);
 
   await db
     .update(userStats)
@@ -576,6 +595,7 @@ async function updateUserStats(
       totalQuizzes: existing.totalQuizzes + 1,
       totalCorrect: existing.totalCorrect + correctOnQuiz,
       lifetimeScore: existing.lifetimeScore + finalScoreValue,
+      bestScore: newBest,
       lastPlayedDate: today,
       freezesUsedThisWeek: freezeApplied
         ? effectiveFreezesUsed + 1
@@ -586,7 +606,7 @@ async function updateUserStats(
     })
     .where(eq(userStats.userId, userId));
 
-  return { freezeApplied, comebackJustEarned };
+  return { freezeApplied, comebackJustEarned, bestScore: newBest, isNewBest };
 }
 
 async function updateCategoryMastery(
@@ -669,7 +689,11 @@ async function loadResults(
   finalScoreValue: number,
   userId: number | null,
   answered: AnsweredQuestion[],
-  freezeData: { freezeApplied: boolean; comebackJustEarned: boolean } = {
+  freezeData: {
+    freezeApplied: boolean;
+    comebackJustEarned: boolean;
+    isNewBest?: boolean;
+  } = {
     freezeApplied: false,
     comebackJustEarned: false,
   },
@@ -706,6 +730,7 @@ async function loadResults(
         comebackEarned: boolean;
       }
     | undefined;
+  let personalBest: QuizResults["personalBest"];
   if (userId !== null) {
     const [stats] = await db
       .select({
@@ -713,6 +738,7 @@ async function loadResults(
         longest: userStats.longestStreak,
         perfectScores: userStats.perfectScores,
         comebackEarned: userStats.comebackEarned,
+        bestScore: userStats.bestScore,
       })
       .from(userStats)
       .where(eq(userStats.userId, userId))
@@ -723,6 +749,10 @@ async function loadResults(
         longest: stats.longest,
         perfectScores: stats.perfectScores,
         comebackEarned: stats.comebackEarned,
+      };
+      personalBest = {
+        score: stats.bestScore,
+        isNew: freezeData.isNewBest ?? false,
       };
     }
   }
@@ -795,6 +825,7 @@ async function loadResults(
     friendsToday,
     userStreak,
     masteryProgress,
+    personalBest,
     freezeApplied: freezeData.freezeApplied || undefined,
     comebackJustEarned: freezeData.comebackJustEarned || undefined,
     perQuestion: answered.map((a) => {
