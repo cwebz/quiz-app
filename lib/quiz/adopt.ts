@@ -80,6 +80,7 @@ export async function seedRollupsForNewUser(
   let totalQuizzes = 0;
   let totalCorrect = 0;
   let lifetimeScore = 0;
+  let bestScore = 0;
   let perfectScores = 0;
   let lastPlayedDate: string | null = null;
 
@@ -89,6 +90,7 @@ export async function seedRollupsForNewUser(
     totalQuizzes += 1;
     totalCorrect += a.score;
     lifetimeScore += a.finalScore;
+    if (a.finalScore > bestScore) bestScore = a.finalScore;
     if (a.score === 5) perfectScores += 1;
     const date = a.completedAt.slice(0, 10);
     playedDates.add(date);
@@ -145,6 +147,7 @@ export async function seedRollupsForNewUser(
     totalQuizzes,
     totalCorrect,
     lifetimeScore,
+    bestScore,
     lastPlayedDate,
     freezesUsedThisWeek: 0,
     weekStartDate: getIsoWeekMonday(),

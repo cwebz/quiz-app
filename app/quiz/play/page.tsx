@@ -1050,6 +1050,22 @@ function ResultsScreen({ results }: { results: QuizResults }) {
             >
               {results.finalScore} pts
             </span>
+            {results.personalBest &&
+              (results.personalBest.isNew ? (
+                <span
+                  className="chip chip--pink"
+                  style={{ fontSize: 13, padding: "6px 12px" }}
+                >
+                  <Ico.Trophy style={{ width: 14, height: 14 }} /> New best!
+                </span>
+              ) : (
+                <span
+                  className="chip chip--ghost"
+                  style={{ fontSize: 13, padding: "6px 12px" }}
+                >
+                  Best {results.personalBest.score.toLocaleString()}
+                </span>
+              ))}
           </div>
         </div>
       </div>

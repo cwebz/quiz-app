@@ -58,6 +58,7 @@ type ProfileData = {
   totalQuizzes: number;
   totalCorrect: number;
   lifetimeScore: number;
+  bestScore: number;
   perfectScores: number;
   comebackEarned: boolean;
   hasSpeedDemon: boolean;
@@ -158,6 +159,7 @@ async function loadProfile(userId: number): Promise<ProfileData | null> {
     totalQuizzes: statsRow?.totalQuizzes ?? 0,
     totalCorrect: statsRow?.totalCorrect ?? 0,
     lifetimeScore: statsRow?.lifetimeScore ?? 0,
+    bestScore: statsRow?.bestScore ?? 0,
     perfectScores: statsRow?.perfectScores ?? 0,
     comebackEarned: statsRow?.comebackEarned ?? false,
     hasSpeedDemon: !!speedDemonRow,
@@ -288,6 +290,10 @@ export default async function ProfilePage() {
         <div className="stat-card yellow">
           <div className="num">{profile.longestStreak.toLocaleString()}</div>
           <div className="lbl">Longest streak</div>
+        </div>
+        <div className="stat-card mint">
+          <div className="num">{profile.bestScore.toLocaleString()}</div>
+          <div className="lbl">Best score</div>
         </div>
       </div>
 
