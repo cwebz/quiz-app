@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Fredoka, Nunito } from "next/font/google";
+import { Fredoka, Lexend } from "next/font/google";
 import { Topbar } from "@/components/Topbar";
 import "./globals.css";
 
+// Fredoka is the brand/display face — logo, headings, big hero numbers only.
 const fredoka = Fredoka({
   variable: "--font-fredoka",
   subsets: ["latin"],
@@ -10,10 +11,12 @@ const fredoka = Fredoka({
   display: "swap",
 });
 
-const nunito = Nunito({
-  variable: "--font-nunito",
+// Lexend is the readable content face — engineered to reduce reading fatigue.
+// Used for body text, question text, labels, nav, and most small UI.
+const lexend = Lexend({
+  variable: "--font-lexend",
   subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -43,7 +46,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${fredoka.variable} ${nunito.variable}`}
+      className={`${fredoka.variable} ${lexend.variable}`}
       data-theme="lavender"
     >
       {/*
