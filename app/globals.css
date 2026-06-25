@@ -1,7 +1,7 @@
 /* ============================================================
    Smarter Than The Internet — design tokens (ported from prototype)
    Aesthetic: Duolingo-adjacent. Chunky, friendly, 3D buttons,
-   solid color blocks, no soft drop shadows. Fredoka + Nunito.
+   solid color blocks, no soft drop shadows. Fredoka + Lexend.
    Lavender theme + cozy density baked in.
    ============================================================ */
 
@@ -44,8 +44,12 @@
   --blue-soft:      #D6EEFF;
 
   /* Type — bound to next/font CSS variables, with prototype fallbacks */
-  --font-display: var(--font-fredoka), "Fredoka", ui-rounded, system-ui, sans-serif;
-  --font-body:    var(--font-nunito), "Nunito", ui-rounded, system-ui, sans-serif;
+  /* Brand face: logo, headings, big hero numbers only. */
+  --font-brand:   var(--font-fredoka), "Fredoka", ui-rounded, system-ui, sans-serif;
+  /* Readable content face (Lexend). --font-display kept as the alias used by
+     most small/label UI so it picks up the legible font automatically. */
+  --font-display: var(--font-lexend), "Lexend", system-ui, sans-serif;
+  --font-body:    var(--font-lexend), "Lexend", system-ui, sans-serif;
 
   /* Radii */
   --r-sm: 10px;
@@ -83,7 +87,7 @@ body {
 }
 
 button { font-family: inherit; cursor: pointer; }
-h1,h2,h3,h4 { font-family: var(--font-display); margin: 0; color: var(--ink); letter-spacing: -0.01em; }
+h1,h2,h3,h4 { font-family: var(--font-brand); margin: 0; color: var(--ink); letter-spacing: -0.01em; }
 h1 { font-weight: 700; }
 h2 { font-weight: 700; }
 h3 { font-weight: 600; }
@@ -159,7 +163,7 @@ a { color: inherit; text-decoration: none; }
 }
 .mobile-nav-popover a.active { color: var(--primary); background: var(--primary-soft); }
 .mobile-nav-popover a:hover:not(.active) { color: var(--ink); background: var(--bg); }
-.brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--ink); cursor: pointer; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-brand); font-weight: 700; font-size: 20px; color: var(--ink); cursor: pointer; }
 .brand-dot { width: 36px; height: 36px; border-radius: 12px; background: var(--primary); display: grid; place-items: center; box-shadow: 0 3px 0 var(--primary-dark); }
 .brand-dot svg { color: #fff; }
 
@@ -394,7 +398,7 @@ a { color: inherit; text-decoration: none; }
 .timer {
   width: 56px; height: 56px; position: relative;
   display: grid; place-items: center;
-  font-family: var(--font-display); font-weight: 700; font-size: 18px;
+  font-family: var(--font-brand); font-weight: 700; font-size: 18px;
   color: var(--ink);
 }
 .timer.warn { color: var(--coral); }
@@ -533,7 +537,7 @@ a { color: inherit; text-decoration: none; }
    visual containment without decoration. */
 .results-hero > * { position: relative; }
 .percentile-eyebrow { color: var(--primary-dark); font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 13px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-.percentile-num { font-family: var(--font-display); font-weight: 700; font-size: clamp(46px, 13vw, 110px); line-height: 0.95; color: var(--ink); letter-spacing: -0.04em; }
+.percentile-num { font-family: var(--font-brand); font-weight: 700; font-size: clamp(46px, 13vw, 110px); line-height: 0.95; color: var(--ink); letter-spacing: -0.04em; }
 .percentile-num em { font-style: normal; color: var(--primary); }
 .percentile-suffix { font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--ink-soft); margin-top: 8px; max-width: 320px; }
 /* Score column: the ring with its stat chips. Sits to the right of the
@@ -549,7 +553,7 @@ a { color: inherit; text-decoration: none; }
 .score-ring-center {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  font-family: var(--font-display);
+  font-family: var(--font-brand);
 }
 .score-ring-num { font-size: 56px; font-weight: 700; color: var(--ink); line-height: 1; }
 .score-ring-num span { color: var(--ink-mute); font-size: 28px; }
@@ -606,7 +610,7 @@ a { color: inherit; text-decoration: none; }
   display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center;
 }
 .streak-icon { font-size: 44px; line-height: 1; }
-.streak-num { font-family: var(--font-display); font-weight: 700; font-size: 30px; line-height: 1.05; }
+.streak-num { font-family: var(--font-brand); font-weight: 700; font-size: 30px; line-height: 1.05; }
 .streak-label { font-family: var(--font-display); font-weight: 600; font-size: 13px; opacity: 0.8; margin-top: 4px; }
 /* Slim the streak card on phones so the Share card sits higher in view and
    stays visible without scrolling — sharing is what drives new players.
@@ -682,13 +686,13 @@ a { color: inherit; text-decoration: none; }
   width: 96px; height: 96px; border-radius: 28px;
   background: var(--primary);
   display: grid; place-items: center;
-  font-family: var(--font-display); font-weight: 700; font-size: 38px; color: #fff;
+  font-family: var(--font-brand); font-weight: 700; font-size: 38px; color: #fff;
   border: 3px solid var(--ink); box-shadow: 0 5px 0 var(--ink);
 }
 @media (max-width: 600px) {
   .profile-avatar { width: 72px; height: 72px; border-radius: 20px; font-size: 28px; box-shadow: 0 4px 0 var(--ink); }
 }
-.profile-name { font-size: 32px; font-weight: 700; font-family: var(--font-display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-name { font-size: 32px; font-weight: 700; font-family: var(--font-brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 600px) { .profile-name { font-size: 22px; } }
 .profile-handle { color: var(--ink-soft); font-size: 15px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 600px) { .profile-handle { font-size: 13px; } }
@@ -701,7 +705,7 @@ a { color: inherit; text-decoration: none; }
   border: 2px solid;
   border-bottom-width: 4px;
 }
-.stat-card .num { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-card .num { font-family: var(--font-brand); font-weight: 700; font-size: 26px; line-height: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stat-card .lbl { font-family: var(--font-display); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; opacity: 0.85; }
 .stat-card.purple { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-dark); }
 .stat-card.yellow { background: var(--yellow-soft); border-color: var(--yellow); color: #6B4900; }
@@ -883,7 +887,7 @@ a { color: inherit; text-decoration: none; }
   padding: 18px;
 }
 .kpi .lbl { font-family: var(--font-display); font-weight: 600; font-size: 12px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; }
-.kpi .num { font-family: var(--font-display); font-weight: 700; font-size: 32px; line-height: 1; margin-top: 8px; }
+.kpi .num { font-family: var(--font-brand); font-weight: 700; font-size: 32px; line-height: 1; margin-top: 8px; }
 .kpi .delta { font-family: var(--font-display); font-weight: 700; font-size: 12px; margin-top: 8px; display: inline-block; padding: 2px 8px; border-radius: 999px; }
 .kpi .delta.up { background: var(--mint-soft); color: var(--mint-dark); }
 .kpi .delta.down { background: var(--coral-soft); color: var(--coral-dark); }
@@ -891,7 +895,7 @@ a { color: inherit; text-decoration: none; }
 
 .sparkline { width: 100%; height: 56px; margin-top: 8px; }
 
-.section-h { font-family: var(--font-display); font-weight: 700; font-size: 22px; margin-bottom: 4px; }
+.section-h { font-family: var(--font-brand); font-weight: 700; font-size: 22px; margin-bottom: 4px; }
 
 /* Distribution histogram */
 .histogram { display: flex; align-items: end; gap: 8px; height: 120px; padding: 8px 4px; }
